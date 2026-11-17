@@ -15,6 +15,8 @@ export type CapturedResource = {
 };
 
 export const captured: {
+  r2Buckets: CapturedResource[];
+  r2Domains: CapturedResource[];
   workersScripts: CapturedResource[];
   workersSubdomains: CapturedResource[];
   cloudRunServices: CapturedResource[];
@@ -23,6 +25,8 @@ export const captured: {
   workerCustomDomains: CapturedResource[];
   gcpResources: (CapturedResource & { kind: string })[];
 } = {
+  r2Buckets: [],
+  r2Domains: [],
   workersScripts: [],
   workersSubdomains: [],
   cloudRunServices: [],
@@ -57,6 +61,8 @@ mock.module("@pulumi/cloudflare", () => ({
       captured.cloudflareProviders.push({ name, args });
     }
   },
+  R2Bucket: class { constructor(name: string, args: Record<string,unknown>, opts?: Record<string,unknown>) { captured.r2Buckets.push({name,args,opts}); } },
+  R2ManagedDomain: class { domain="public.example.test"; constructor(name: string, args: Record<string,unknown>, opts?: Record<string,unknown>) { captured.r2Domains.push({name,args,opts}); } },
   getZoneOutput: () => ({ zoneId: "zone-1" }),
   DnsRecord: class {
     constructor(name: string, args: Record<string, unknown>) {
@@ -126,3 +132,5 @@ export const namingTag = ((
   strings: TemplateStringsArray,
   ...values: unknown[]
 ): string => String.raw({ raw: strings }, ...values)) as any;
+
+mock.module("@pulumi/aws", () => ({ s3: {} }));

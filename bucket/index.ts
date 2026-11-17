@@ -11,6 +11,8 @@ import * as cloudflare from "@pulumi/cloudflare";
 import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
 
+import { cloudflareProviderFromCredentials } from "../_internal/cloudflare-provider";
+
 import { ServiceAccountCI, R2BucketCI, S3BucketCI } from "../_internal/interfaces";
 
 // ---- Zod Enums for Config Options ----
@@ -389,7 +391,6 @@ component.implement("cloudflare", {
     state,
     $,
     getCredentials,
-    cloudflare: cfProvider,
   }) => {
     const creds = (getCredentials() as Record<string, string>) || {};
     const accountId = creds.CLOUDFLARE_ACCOUNT_ID;
@@ -397,9 +398,9 @@ component.implement("cloudflare", {
     const bucketName: string = deploymentConfig.name;
     const publicAccess: boolean = deploymentConfig.publicAccess === true;
 
-    const cfOpts: pulumi.CustomResourceOptions = cfProvider
-      ? { provider: cfProvider }
-      : {};
+    const cfOpts: pulumi.CustomResourceOptions = {
+      provider: cloudflareProviderFromCredentials($`cf-provider-${name}`, getCredentials),
+    };
 
     const bucket = new cloudflare.R2Bucket(
       $`r2-${name}`,
