@@ -133,4 +133,3 @@ export const namingTag = ((
   ...values: unknown[]
 ): string => String.raw({ raw: strings }, ...values)) as any;
 
-mock.module("@pulumi/aws", () => ({ s3: {} }));
