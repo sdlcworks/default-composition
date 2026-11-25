@@ -14,6 +14,7 @@
     "@pulumi/cloudflare": "6.19.0",
     "@pulumi/command": "^1.2.1",
     "@pulumi/gcp": "^9.6.0",
+    "@pulumi/github": "6.15.1",
     "@pulumi/hcloud": "^1.38.0",
     "@pulumi/kubernetes": "^4.28.0",
     "@pulumi/mongodbatlas": "^4.11",

@@ -1,6 +1,6 @@
-# infra-components
+# default-composition
 
-Centralised, public SDLC infrastructure component definitions. This repository is the default infra source for SDLC projects -- it provides the set of infrastructure components, artifact registries, and URL registers that the SDLC platform provisions and manages.
+Centralised, public SDLC component definitions. This repository is the default component library for SDLC projects -- it provides the components, organization integrations, provider declarations, artifact registries, and URL registers that the SDLC platform provisions and manages.
 
 Users reference this repo as an infra source in their SDLC project configuration. The components here are read-only from the user's perspective; the platform reads, builds, and provisions them.
 
@@ -51,6 +51,18 @@ Users reference this repo as an infra source in their SDLC project configuration
 |---|---|
 | `url-registers/cloudflare-dns/` | Cloudflare DNS records + Workers custom domains |
 
+### Organization Integrations
+
+| Directory | Description |
+|---|---|
+| `organization-integrations/github-organization/` | GitHub organization settings and invitation-backed membership allocation |
+
+### Provider Declarations
+
+| Directory | Description |
+|---|---|
+| `providers/github/` | GitHub organization administration through a classic token with `admin:org` scope |
+
 ### Shared
 
 | Directory | Description |
@@ -62,7 +74,7 @@ Users reference this repo as an infra source in their SDLC project configuration
 This repo is an SDLC infra component (`infra_code = true` in `sdlc.toml`). The build toolchain:
 
 1. Install JS dependencies: `cd .js && bun install`
-2. Bundle: `sdlc-components-build --bundle` (from the repo root)
+2. Bundle every admitted component-library member: `sdlc-components-build --bundle` (from the repo root)
 
 The `shell.nix` provides `bun`, `nodejs`, and the `sdlc-components-build` binary.
 

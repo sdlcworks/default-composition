@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../.."
+  },
+  "include": [
+    "../../providers/github/index.ts",
+    "../../organization-integrations/github-organization/index.ts",
+    "./provider.test.ts",
+    "./integration.test.ts"
+  ]
+}
