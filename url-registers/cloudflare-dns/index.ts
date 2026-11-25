@@ -1,10 +1,11 @@
+import cloudflareDeclaration, { type CloudflareWorld } from "../../providers/cloudflare";
+
 import * as pulumi from "@pulumi/pulumi";
 import * as cloudflare from "@pulumi/cloudflare";
 import { URLRegister } from "@sdlcworks/components";
 import { PublicCI } from "../../_internal/interfaces";
 import { LOG_PREFIX } from "./constants";
-import { cloudflareProviderFromCredentials } from "../../_internal/cloudflare-provider";
-import type { CloudCredentialCloudflare } from "@sdlcworks/components";
+import { cloudflareProviderFromWorld } from "../../_internal/cloudflare-provider";
 import { ConfigSchema, type Config, isWorkerRecord } from "./schema";
 import {
   buildComponentResultUri,
@@ -23,7 +24,7 @@ const register = new URLRegister({
   configSchema: ConfigSchema,
 });
 
-register.implement("cloudflare", {
+register.implement(cloudflareDeclaration, {
   provision: async (ctx) => {
     // The framework's InferZodType wraps every top-level config field in
     // PulumiInput<T> (to accept Outputs from upstream resolutions). In practice
@@ -31,13 +32,13 @@ register.implement("cloudflare", {
     // config values are concrete by the time we run. Cast once at the boundary.
     const config = ctx.config as unknown as Config;
     const { components, $ } = ctx;
-    const creds = ctx.getCredentials() as CloudCredentialCloudflare;
+    const creds: CloudflareWorld = ctx.provider;
 
     const results: Record<string, pulumi.Output<string>> = {};
 
-    const provider = cloudflareProviderFromCredentials(
+    const provider = cloudflareProviderFromWorld(
       $`cf-provider`,
-      ctx.getCredentials,
+      ctx.provider,
       { aliases: [{ name: $`cloudflare` }] },
     );
     const opts = { provider };
@@ -102,7 +103,7 @@ register.implement("cloudflare", {
 
       const proxied = rcfg.proxied ?? config.defaults.proxied;
       const ttl = resolveTtl(rcfg, config.defaults, proxied);
-      const host = pulumi.output(metadata.host) as pulumi.Output<string>;
+      const host = pulumi.output(metadata.host);
 
       if (pulumi.Output.isInstance(metadata.requiredHost)) {
         throw new Error(
@@ -159,11 +160,6 @@ register.implement("cloudflare", {
     // --- Managed host-rewrite hop for origin-addressed components ---
     if (hostRewriteRoutes.length > 0) {
       const accountId = creds.CLOUDFLARE_ACCOUNT_ID;
-      if (!accountId) {
-        throw new Error(
-          `${LOG_PREFIX} CLOUDFLARE_ACCOUNT_ID is required in credentials when origin-addressed components are present (found ${hostRewriteRoutes.length}: ${hostRewriteRoutes.map((r) => r.appName).join(", ")})`,
-        );
-      }
 
       createHostRewriteWorker({
         $,
@@ -177,11 +173,6 @@ register.implement("cloudflare", {
     // --- Worker records (config-driven, not component-bound) ---
     if (workerRecords.length > 0) {
       const accountId = creds.CLOUDFLARE_ACCOUNT_ID;
-      if (!accountId) {
-        throw new Error(
-          `${LOG_PREFIX} CLOUDFLARE_ACCOUNT_ID is required in credentials when worker records are present (found ${workerRecords.length})`,
-        );
-      }
 
       for (const [key, rcfg] of workerRecords) {
         const fqdn = resolveFqdn(rcfg, config.domain);
@@ -211,6 +202,6 @@ register.implement("cloudflare", {
 
     return results;
   },
-});
+}, ["name-registration", "workers"] as const);
 
 export default register;

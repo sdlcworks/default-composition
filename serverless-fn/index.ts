@@ -32,7 +32,10 @@ import {
   PostgresCI,
 } from "../_internal/interfaces";
 
-import { cloudflareProviderFromCredentials } from "../_internal/cloudflare-provider";
+import { cloudflareProviderFromWorld } from "../_internal/cloudflare-provider";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+import gcloudDeclaration from "../providers/gcloud";
+import cloudflareDeclaration from "../providers/cloudflare";
 import {
   mintGcpAccessToken,
   waitForCloudRunOperation,
@@ -916,42 +919,7 @@ export function redeployedTemplate<T extends { containers?: Array<Record<string,
 }
 
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: false,
-    proxiable: true,
-  },
-  acceptedArtifactTypes: [
-    DeploymentArtifactType.oci_spec_image,
-    DeploymentArtifactType.file,
-  ],
-  connectionTypes: {
-    internal: {
-      description: "allows internal VPC communication to this service",
-      interface: InternalServiceCI,
-    },
-    postgres: {
-      description:
-        "consumer-side: a Cloud Run service connects to a Postgres database",
-      interface: PostgresCI,
-    },
-    "r2-bucket": {
-      description:
-        "consumer-side: a Cloud Run service connects to an R2 bucket",
-      interface: R2BucketCI,
-    },
-  } as const,
-  connectionInterfaces: [
-    ServiceAccountCI,
-    BackendServiceCI,
-    CloudRunServiceHTTPCI,
-    CloudRunJobHTTPCI,
-    ServiceBindingCI,
-    HTTPPublicCI,
-    R2BucketCI,
-    PublicCI,
-  ],
-  configSchema: z.object({
+const ConfigSchema = z.object({
     region: z.string().default("us-central1").optional(),
 
     ingress: IngressType.default("INGRESS_TRAFFIC_ALL").optional(),
@@ -1014,7 +982,44 @@ const component = new InfraComponent({
           .default("404-page"),
       })
       .optional(),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: false,
+    proxiable: true,
+  },
+  acceptedArtifactTypes: [
+    DeploymentArtifactType.oci_spec_image,
+    DeploymentArtifactType.file,
+  ],
+  connectionTypes: {
+    internal: {
+      description: "allows internal VPC communication to this service",
+      interface: InternalServiceCI,
+    },
+    postgres: {
+      description:
+        "consumer-side: a Cloud Run service connects to a Postgres database",
+      interface: PostgresCI,
+    },
+    "r2-bucket": {
+      description:
+        "consumer-side: a Cloud Run service connects to an R2 bucket",
+      interface: R2BucketCI,
+    },
+  } as const,
+  connectionInterfaces: [
+    ServiceAccountCI,
+    BackendServiceCI,
+    CloudRunServiceHTTPCI,
+    CloudRunJobHTTPCI,
+    ServiceBindingCI,
+    HTTPPublicCI,
+    R2BucketCI,
+    PublicCI,
+  ],
+  configSchema: ConfigSchema,
   appComponentTypes: {
     "http-service": HttpServiceSchema,
     "default": z.object({ publicReleaseProof: PublicReleaseProofSchema.optional() }),
@@ -1031,7 +1036,8 @@ const component = new InfraComponent({
 });
 
 
-component.implement("gcloud", {
+
+component.implement(gcloudDeclaration, {
   stateSchema: z.object({
     serviceName: z.string(),
     region: z.string(),
@@ -1047,48 +1053,45 @@ component.implement("gcloud", {
   }),
   initialState: { allocations: {} },
 
-  pulumi: async ({
-    $,
-    inputs,
-    state,
-    buildArtifacts,
-    envStore,
-    getCredentials,
-    gcp: gcpProvider,
-  }) => {
+  pulumi: async (ctx) => {
+    const { $, state, buildArtifacts, envStore, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
     const {
-      region,
-      ingress,
+      region = "us-central1",
+      ingress = "INGRESS_TRAFFIC_ALL",
       vpcAccess,
-      containerPort,
+      containerPort = 8080,
       environmentVariables,
       secretEnvironmentVariables,
-      resources,
-      minScale,
-      maxScale,
-      maxConcurrency,
-      executionEnvironment,
-      requestTimeout,
+      resources = { cpu: "1000m", memory: "512Mi" },
+      minScale = 0,
+      maxScale = 100,
+      maxConcurrency = 80,
+      executionEnvironment = "EXECUTION_ENVIRONMENT_GEN2",
+      requestTimeout = "300s",
       startupTimeout,
-      sessionAffinity,
+      sessionAffinity = false,
       loadBalancerIntegration,
-    } = inputs;
+    } = config;
 
     const hasAppComponentTargets =
       Object.keys(buildArtifacts).length > 0 ||
       Object.keys(envStore).length > 0;
 
     if (hasAppComponentTargets) {
-      const project = (getCredentials() as Record<string, string>).GCP_PROJECT_ID;
+      const project = world.GCP_PROJECT_ID;
       state.region = region;
       state.project = project;
       state.containerPort = containerPort;
       return {
-        id: "",
-        name: "",
-        uri: "",
-        latestReadyRevision: "",
-        location: region,
+        id: pulumi.output(""),
+        name: pulumi.output(""),
+        uri: pulumi.output(""),
+        latestReadyRevision: pulumi.output(""),
+        location: pulumi.output(region),
+        backendServiceId: pulumi.output(undefined),
+        negId: pulumi.output(undefined),
       };
     }
 
@@ -1109,11 +1112,11 @@ component.implement("gcloud", {
     }, gcpOpts);
 
     const envVars = [
-      ...environmentVariables.map((env) => ({
+      ...environmentVariables.map((env: z.infer<typeof EnvVarSchema>) => ({
         name: env.name,
         value: env.value,
       })),
-      ...secretEnvironmentVariables.map((env) => ({
+      ...secretEnvironmentVariables.map((env: z.infer<typeof SecretEnvVarSchema>) => ({
         name: env.name,
         valueSource: {
           secretKeyRef: {
@@ -1157,12 +1160,10 @@ component.implement("gcloud", {
               },
               startupCpuBoost: true,
             },
-            ports: [
-              {
-                name: "http1",
-                containerPort: containerPort,
-              },
-            ],
+            ports: {
+              name: "http1",
+              containerPort,
+            },
             envs: envVars.length > 0 ? envVars : undefined,
             startupProbe: startupTimeout
               ? {
@@ -1177,7 +1178,7 @@ component.implement("gcloud", {
       },
     }, gcpOpts);
 
-    const project = (getCredentials() as Record<string, string>).GCP_PROJECT_ID;
+    const project = world.GCP_PROJECT_ID;
 
     const httpTriggerSa = new gcp.serviceaccount.Account($`http-trigger-sa`, {
       accountId: $`http-sa`,
@@ -1248,13 +1249,13 @@ component.implement("gcloud", {
     }
 
     return {
-      id: service.id,
-      name: service.name,
-      uri: service.uri,
-      latestReadyRevision: service.latestReadyRevision,
-      location: service.location,
-      backendServiceId: backendServiceId,
-      negId: negId,
+      id: pulumi.output(service.id),
+      name: pulumi.output(service.name),
+      uri: pulumi.output(service.uri),
+      latestReadyRevision: pulumi.output(service.latestReadyRevision),
+      location: pulumi.output(service.location),
+      backendServiceId: pulumi.output(backendServiceId),
+      negId: pulumi.output(negId),
     };
   },
 
@@ -1425,7 +1426,7 @@ component.implement("gcloud", {
     }),
   ],
 
-  upsertArtifacts: async ({ buildArtifacts, state, envStore, getCredentials, deploymentConfigs }) => {
+  upsertArtifacts: async ({ buildArtifacts, state, envStore, provider, deploymentConfigs }) => {
     const componentEntries = Object.entries(buildArtifacts);
     for (const [componentName] of componentEntries) {
       if (deploymentConfigs?.[componentName]?.publicReleaseProof !== undefined) {
@@ -1437,14 +1438,8 @@ component.implement("gcloud", {
       return;
     }
 
-    const creds = (getCredentials() as Record<string, string>) || {};
-    const projectId = creds.GCP_PROJECT_ID;
-    const saKey = creds.GCP_SERVICE_ACCOUNT_KEY;
-    if (!projectId || !saKey) {
-      throw new Error(
-        "serverless-fn(gcloud): GCP_PROJECT_ID and GCP_SERVICE_ACCOUNT_KEY must be present in cloud_credentials.gcloud",
-      );
-    }
+    const projectId = provider.GCP_PROJECT_ID;
+    const saKey = provider.GCP_SERVICE_ACCOUNT_KEY;
 
     const accessToken = await mintGcpAccessToken(saKey);
 
@@ -1515,10 +1510,10 @@ component.implement("gcloud", {
       console.error(`Successfully deployed ${imageUri} to ${serviceName}`);
     }
   },
-});
+}, ["infrastructure"] as const);
 
 
-component.implement("cloudflare", {
+component.implement(cloudflareDeclaration, {
   stateSchema: z.object({
     scriptName: z.string(),
     accountId: z.string(),
@@ -1549,13 +1544,9 @@ component.implement("cloudflare", {
   }),
   initialState: { allocations: {} },
 
-  pulumi: async ({
-    $,
-    inputs,
-    state,
-    buildArtifacts,
-    getCredentials,
-  }) => {
+  pulumi: async (ctx) => {
+    const { $, state, buildArtifacts, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
     const {
       accountId,
       routing,
@@ -1570,12 +1561,12 @@ component.implement("cloudflare", {
       assetMode,
       assetsConfig,
       secretEnvironmentVariables,
-    } = inputs;
+    } = config;
     const mode: AssetMode = assetMode ?? "script";
     const deploysContentAtRelease = mode !== "script";
     const isWorkerAssets = mode === "worker-assets";
-    const credentials = getCredentials();
-    const secretRefs = (secretEnvironmentVariables ?? []).map((secret) => ({
+    const credentials = world;
+    const secretRefs = (secretEnvironmentVariables ?? []).map((secret: z.infer<typeof SecretEnvVarSchema>) => ({
       name: secret.name,
       secret_name: secret.secretName,
     }));
@@ -1595,7 +1586,7 @@ component.implement("cloudflare", {
     }
 
     const cfOpts: pulumi.CustomResourceOptions = {
-      provider: cloudflareProviderFromCredentials($`cf-provider`, getCredentials),
+      provider: cloudflareProviderFromWorld($`cf-provider`, world),
     };
 
     const scriptName = $`worker`;
@@ -1636,38 +1627,38 @@ component.implement("cloudflare", {
     }
 
     const bindings: cloudflare.types.input.WorkersScriptBinding[] = [
-      ...environmentVariables.map((env) => ({
+      ...environmentVariables.map((env: z.infer<typeof EnvVarSchema>) => ({
         name: env.name,
         text: env.value,
         type: "plain_text" as const,
       })),
-      ...(cfBindings?.r2 || []).map((binding) => ({
+      ...(cfBindings?.r2 || []).map((binding: z.infer<typeof R2BindingSchema>) => ({
         name: binding.name,
         bucketName: binding.bucketName,
         type: "r2_bucket" as const,
       })),
-      ...(cfBindings?.services || []).map((binding) => ({
+      ...(cfBindings?.services || []).map((binding: z.infer<typeof WorkerServiceBindingSchema>) => ({
         name: binding.name,
         service: binding.service,
         environment: binding.environment,
         type: "service" as const,
       })),
-      ...(cfBindings?.kv || []).map((binding) => ({
+      ...(cfBindings?.kv || []).map((binding: z.infer<typeof KVBindingSchema>) => ({
         name: binding.name,
         namespaceId: binding.namespaceId,
         type: "kv_namespace" as const,
       })),
-      ...(cfBindings?.d1 || []).map((binding) => ({
+      ...(cfBindings?.d1 || []).map((binding: z.infer<typeof D1BindingSchema>) => ({
         name: binding.name,
         id: binding.databaseId,
         type: "d1" as const,
       })),
-      ...(cfBindings?.queues || []).map((binding) => ({
+      ...(cfBindings?.queues || []).map((binding: z.infer<typeof QueueBindingSchema>) => ({
         name: binding.name,
         queueName: binding.queueName,
         type: "queue" as const,
       })),
-      ...secretRefs.map((ref) => ({
+      ...secretRefs.map((ref: { name: string; secret_name: string }) => ({
         name: ref.name,
         text: pulumi.secret(requireSecretValue(credentials, ref.name, ref.secret_name)),
         type: SECRET_TEXT_BINDING as "secret_text",
@@ -1692,33 +1683,33 @@ component.implement("cloudflare", {
         : {}),
       ...(secretRefs.length > 0 ? { secret_refs: secretRefs } : {}),
       bindings: [
-        ...environmentVariables.map((env) => ({
+        ...environmentVariables.map((env: z.infer<typeof EnvVarSchema>) => ({
           type: "plain_text",
           name: env.name,
           text: env.value,
         })),
-        ...(cfBindings?.r2 || []).map((binding) => ({
+        ...(cfBindings?.r2 || []).map((binding: z.infer<typeof R2BindingSchema>) => ({
           type: "r2_bucket",
           name: binding.name,
           bucket_name: binding.bucketName,
         })),
-        ...(cfBindings?.services || []).map((binding) => ({
+        ...(cfBindings?.services || []).map((binding: z.infer<typeof WorkerServiceBindingSchema>) => ({
           type: "service",
           name: binding.name,
           service: binding.service,
           ...(binding.environment ? { environment: binding.environment } : {}),
         })),
-        ...(cfBindings?.kv || []).map((binding) => ({
+        ...(cfBindings?.kv || []).map((binding: z.infer<typeof KVBindingSchema>) => ({
           type: "kv_namespace",
           name: binding.name,
           namespace_id: binding.namespaceId,
         })),
-        ...(cfBindings?.d1 || []).map((binding) => ({
+        ...(cfBindings?.d1 || []).map((binding: z.infer<typeof D1BindingSchema>) => ({
           type: "d1",
           name: binding.name,
           id: binding.databaseId,
         })),
-        ...(cfBindings?.queues || []).map((binding) => ({
+        ...(cfBindings?.queues || []).map((binding: z.infer<typeof QueueBindingSchema>) => ({
           type: "queue",
           name: binding.name,
           queue_name: binding.queueName,
@@ -1767,43 +1758,35 @@ component.implement("cloudflare", {
     }, { dependsOn: [worker], ...cfOpts });
 
     let workerUri: pulumi.Output<string>;
-
-    if (routing) {
-      if (routing.type === "route") {
+    if (routing?.type === "route") {
         new cloudflare.WorkersRoute($`route`, {
           zoneId: routing.zoneId,
           pattern: routing.pattern,
           script: scriptName,
         }, { dependsOn: [worker], ...cfOpts });
-
-        workerUri = pulumi.interpolate`https://${routing.pattern.replace(
-          "/*",
-          ""
-        )}`;
-      } else if (routing.type === "customDomain") {
+        workerUri = pulumi.output(`https://${routing.pattern.replace("/*", "")}`);
+    } else if (routing?.type === "customDomain") {
         new cloudflare.WorkersCustomDomain($`domain`, {
-          accountId: accountId,
+          accountId,
           zoneId: routing.zoneId,
           hostname: routing.hostname,
           service: scriptName,
         }, { dependsOn: [worker], ...cfOpts });
-
-        workerUri = pulumi.interpolate`https://${routing.hostname}`;
-      } else {
-        workerUri = pulumi.interpolate`https://${scriptName}.workers.dev`;
-      }
+        workerUri = pulumi.output(`https://${routing.hostname}`);
     } else {
-      workerUri = pulumi.interpolate`https://${scriptName}.workers.dev`;
+      workerUri = pulumi.output(`https://${scriptName}.workers.dev`);
     }
 
     state.workerUri = workerUri;
 
     return {
-      id: worker.id,
-      name: worker.scriptName,
-      uri: workerUri,
-      latestReadyRevision: worker.id,
-      location: "edge",
+      id: pulumi.output(worker.id),
+      name: pulumi.output(worker.scriptName),
+      uri: pulumi.output(workerUri),
+      latestReadyRevision: pulumi.output(worker.id),
+      location: pulumi.output("edge"),
+      backendServiceId: pulumi.output(undefined),
+      negId: pulumi.output(undefined),
     };
   },
 
@@ -1871,7 +1854,7 @@ component.implement("cloudflare", {
     }),
   ]),
 
-  upsertArtifacts: async ({ buildArtifacts, state, getCredentials, deploymentConfigs, releaseIdentities }) => {
+  upsertArtifacts: async ({ buildArtifacts, state, provider, deploymentConfigs, releaseIdentities }) => {
     const componentEntries = Object.entries(buildArtifacts);
     if (componentEntries.length === 0) {
       console.error("No artifacts to deploy");
@@ -1912,14 +1895,13 @@ component.implement("cloudflare", {
     }
 
     const witness = proof ? releaseWitness(localFilePath, artifact.digest, releaseIdentities?.[componentName]) : undefined;
-    const credentials = getCredentials();
-    if (proof && !credentials.CLOUDFLARE_API_TOKEN) throw new Error(`${PROOF_REFUSAL}: protected route authority required`);
-    if (proof) await exactRoute(proof, state.scriptName as string, credentials.CLOUDFLARE_API_TOKEN as string);
+    const credentials = provider;
+    if (proof) await exactRoute(proof, state.scriptName as string, credentials.CLOUDFLARE_API_TOKEN);
     const settings = state.scriptSettings as ScriptSettings;
     const args: DeployArgs = {
       accountId: state.accountId as string,
       scriptName: state.scriptName as string,
-      apiToken: credentials.CLOUDFLARE_API_TOKEN as string,
+      apiToken: credentials.CLOUDFLARE_API_TOKEN,
       artifactPath: localFilePath,
       witness,
       settings,
@@ -1940,6 +1922,6 @@ component.implement("cloudflare", {
 
     console.error(`Successfully deployed worker script: ${args.scriptName} (${mode})`);
   },
-});
+}, ["workers"] as const);
 
 export default component;

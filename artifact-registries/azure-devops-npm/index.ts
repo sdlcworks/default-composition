@@ -1,3 +1,5 @@
+import azureDeclaration from "../../providers/azure";
+
 import { z } from "zod";
 import { execSync } from "node:child_process";
 import { writeFileSync, unlinkSync, rmSync } from "node:fs";
@@ -23,14 +25,17 @@ const registry = new ArtifactRegistry({
   }),
 });
 
-registry.implement("azure", {
-  provision: async ({ config, state }) => {
+const ConfigSchema = registry.configSchema;
+
+registry.implement(azureDeclaration, {
+  provision: async (ctx) => {
     // No cloud resources to provision — the feed is created in Azure DevOps
     // out-of-band. Persist config to state so publish() can read it.
-    state.feedName = config.feedName;
-    state.project = config.project;
+    const config = ctx.config as unknown as z.infer<typeof ConfigSchema>;
+    ctx.state.feedName = config.feedName;
+    ctx.state.project = config.project;
   },
-  publish: async ({ componentName, artifacts, version, publishVersion, state, getCredentials }) => {
+  publish: async ({ componentName, artifacts, version, publishVersion, state, provider }) => {
     // npm publishes are one tarball per package version — a single registry
     // entry can't accept multiple labelled artifacts in one release. Reject
     // upfront rather than publishing a racy stream of same-version tarballs.
@@ -45,16 +50,7 @@ registry.implement("azure", {
     const [label] = labels;
     const artifact = artifacts[label];
 
-    const creds = getCredentials() as {
-      AZURE_DEVOPS_ORG: string;
-      AZURE_DEVOPS_PAT: string;
-    };
-    if (!creds.AZURE_DEVOPS_ORG || !creds.AZURE_DEVOPS_PAT) {
-      throw new Error(
-        "azure-devops-npm: AZURE_DEVOPS_ORG and AZURE_DEVOPS_PAT not found in cloud_credentials for provider 'azuredevops'. " +
-          "Add azuredevops credentials to cloud_credentials in the project config.",
-      );
-    }
+    const creds = provider;
 
     const { feedName, project } = state;
     const feedPath = project
@@ -142,6 +138,6 @@ registry.implement("azure", {
       },
     };
   },
-});
+}, ["package-publish"] as const);
 
 export default registry;

@@ -1,3 +1,5 @@
+import npmDeclaration from "../../providers/npm";
+
 import { z } from "zod";
 import { execSync } from "node:child_process";
 import { writeFileSync, unlinkSync, rmSync } from "node:fs";
@@ -11,11 +13,11 @@ const registry = new ArtifactRegistry({
   configSchema: z.object({}),
 });
 
-registry.implement("npm", {
+registry.implement(npmDeclaration, {
   provision: async () => {
     // No cloud resources needed — npmjs.com is external.
   },
-  publish: async ({ componentName, artifacts, version, publishVersion, getCredentials }) => {
+  publish: async ({ componentName, artifacts, version, publishVersion, provider }) => {
     // npm publishes are one tarball per package version — a single registry
     // entry can't accept multiple labelled artifacts in one release. Reject
     // upfront rather than publishing a racy stream of same-version tarballs.
@@ -30,13 +32,6 @@ registry.implement("npm", {
     const [label] = labels;
     const artifact = artifacts[label];
 
-    const creds = getCredentials() as { NPM_TOKEN: string };
-    if (!creds.NPM_TOKEN) {
-      throw new Error(
-        "npm-public: NPM_TOKEN not found in cloud_credentials for provider 'npm'. " +
-          "Add npm credentials to cloud_credentials in the project config.",
-      );
-    }
 
     // Extract package name from the tarball's package.json so the returned
     // URI points at the canonical npmjs.com page, not just the component
@@ -67,7 +62,7 @@ registry.implement("npm", {
     const npmrcPath = join(tmpdir(), `.npmrc-sdlc-${Date.now()}`);
     writeFileSync(
       npmrcPath,
-      `//registry.npmjs.org/:_authToken=${creds.NPM_TOKEN}\n`,
+      `//registry.npmjs.org/:_authToken=${provider.NPM_TOKEN}\n`,
     );
 
     try {
@@ -111,6 +106,6 @@ registry.implement("npm", {
       },
     };
   },
-});
+}, ["package-publish"] as const);
 
 export default registry;

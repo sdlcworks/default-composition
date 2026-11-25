@@ -1,9 +1,12 @@
+import azureDeclaration from "../../providers/azure";
+
 import { z } from "zod";
 import { execSync } from "node:child_process";
 import { writeFileSync, unlinkSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { ArtifactRegistry, DeploymentArtifactType } from "@sdlcworks/components";
+import * as pulumi from "@pulumi/pulumi";
 import { stampNpmTarball } from "../../_internal/stamp-npm-tarball";
 
 const registry = new ArtifactRegistry({
@@ -20,13 +23,13 @@ const registry = new ArtifactRegistry({
   }),
 });
 
-registry.implement("npm", {
+registry.implement(azureDeclaration, {
   provision: async ({ config, state }) => {
-    state.feed = config.feed;
-    state.project = config.project;
-    state.scope = config.scope;
+    state.feed = pulumi.output(config.feed);
+    state.project = pulumi.output(config.project);
+    state.scope = pulumi.output(config.scope);
   },
-  publish: async ({ componentName, artifacts, version, publishVersion, state, getCredentials }) => {
+  publish: async ({ componentName, artifacts, version, publishVersion, state, provider }) => {
     const labels = Object.keys(artifacts);
     if (labels.length !== 1) {
       throw new Error(
@@ -38,16 +41,7 @@ registry.implement("npm", {
     const [label] = labels;
     const artifact = artifacts[label];
 
-    const creds = getCredentials() as {
-      AZURE_DEVOPS_ORG?: string;
-      AZURE_DEVOPS_PAT?: string;
-    };
-    if (!creds.AZURE_DEVOPS_ORG || !creds.AZURE_DEVOPS_PAT) {
-      throw new Error(
-        "npm-private: AZURE_DEVOPS_ORG and AZURE_DEVOPS_PAT not found in cloud_credentials for provider 'azuredevops'. " +
-          "Add azuredevops credentials to cloud_credentials in the project config.",
-      );
-    }
+    const creds = provider;
 
     const { feed, project } = state;
     const feedPath = project
@@ -129,6 +123,6 @@ registry.implement("npm", {
       },
     };
   },
-});
+}, ["package-publish"] as const);
 
 export default registry;

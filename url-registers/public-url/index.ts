@@ -1,3 +1,5 @@
+import cloudflareDeclaration from "../../providers/cloudflare";
+
 import * as pulumi from "@pulumi/pulumi";
 import * as cloudflare from "@pulumi/cloudflare";
 import * as gcp from "@pulumi/gcp";
@@ -11,7 +13,7 @@ import {
   type ProxiedRoute,
 } from "./dns-cloudflare";
 import { provisionGcpLb } from "./ingress-gcp";
-import { cloudflareProviderFromCredentials } from "../../_internal/cloudflare-provider";
+import { cloudflareProviderFromWorld } from "../../_internal/cloudflare-provider";
 
 // Single URL register that owns the co-required invariant: a public hostname
 // is BOTH published in DNS AND accepted by the backend's ingress. Splitting
@@ -58,23 +60,17 @@ const register = new URLRegister({
   configSchema: ConfigSchema,
 });
 
-register.implement("cloudflare", {
+register.implement(cloudflareDeclaration, {
   provision: async (ctx) => {
     const config = ctx.config as unknown as Config;
     const { components, $ } = ctx;
 
-    const cfProvider = cloudflareProviderFromCredentials(
+    const cfProvider = cloudflareProviderFromWorld(
       $`cf-provider`,
-      ctx.getCredentials,
+      ctx.provider,
     );
-    const cfCreds = ctx.getCredentials() as { CLOUDFLARE_ACCOUNT_ID?: string };
+    const cfCreds = ctx.provider;
     const accountId = cfCreds.CLOUDFLARE_ACCOUNT_ID;
-    if (!accountId) {
-      throw new Error(
-        "public-url: CLOUDFLARE_ACCOUNT_ID missing in credentials",
-      );
-    }
-
     const zone = cloudflare.getZoneOutput(
       { filter: { name: config.domain } },
       { provider: cfProvider },
@@ -183,6 +179,6 @@ register.implement("cloudflare", {
 
     return results;
   },
-});
+}, ["name-registration"] as const);
 
 export default register;

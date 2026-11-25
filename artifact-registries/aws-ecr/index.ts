@@ -1,3 +1,5 @@
+import awsDeclaration from "../../providers/aws";
+
 import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 
@@ -22,8 +24,6 @@ const ECR_HOST_SUFFIX = "amazonaws.com";
 const LIFECYCLE_RULE_PRIORITY = 1;
 const LIFECYCLE_RULE_DESCRIPTION =
   "Expire untagged publish debris after the configured retention window";
-const CREDENTIAL_ERROR =
-  "aws-ecr: AWS credentials must include AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION.";
 const REPOSITORY_NAME_ERROR =
   "aws-ecr: repository names must be lowercase ECR repository paths with no leading or trailing slash.";
 
@@ -75,19 +75,6 @@ type AwsCredentials = {
   AWS_REGION: string;
   AWS_SESSION_TOKEN?: string;
 };
-
-function credentialsFrom(getCredentials: () => unknown): AwsCredentials {
-  const creds = getCredentials() as AwsCredentials;
-  if (
-    !creds?.AWS_ACCESS_KEY_ID ||
-    !creds?.AWS_SECRET_ACCESS_KEY ||
-    !creds?.AWS_REGION
-  ) {
-    throw new Error(CREDENTIAL_ERROR);
-  }
-
-  return creds;
-}
 
 function clientConfig(creds: AwsCredentials) {
   return {
@@ -222,10 +209,10 @@ const registry = new ArtifactRegistry({
   stateSchema: StateSchema,
 });
 
-registry.implement("aws", {
-  provision: async ({ config, state, getCredentials }) => {
+registry.implement(awsDeclaration, {
+  provision: async ({ config, state, provider }) => {
     const effective = config as unknown as AwsEcrConfig;
-    const creds = credentialsFrom(getCredentials);
+    const creds = provider;
     const accountId = await resolveAccountId(creds);
 
     state.accountId = accountId;
@@ -237,9 +224,9 @@ registry.implement("aws", {
     state.kmsKeyArn = effective.kmsKeyArn;
     state.labels = effective.labels;
   },
-  publish: async ({ componentName, artifacts, version, state, getCredentials }) => {
+  publish: async ({ componentName, artifacts, version, state, provider }) => {
     const effectiveState = state as unknown as AwsEcrState;
-    const creds = credentialsFrom(getCredentials);
+    const creds = provider;
     const ecr = new ECRClient(clientConfig(creds));
     const host = registryHost(effectiveState);
 
@@ -265,6 +252,6 @@ registry.implement("aws", {
 
     return { artifacts: pushed };
   },
-});
+}, ["registry-publish"] as const);
 
 export default registry;

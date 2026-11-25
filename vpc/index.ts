@@ -1,3 +1,6 @@
+import gcloudDeclaration from "../providers/gcloud";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -24,13 +27,7 @@ const NatLogFilter = z.enum(["ERRORS_ONLY", "TRANSLATIONS_ONLY", "ALL"]);
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: false,
-    proxiable: false,
-  },
-  connectionTypes: {},
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // Core
     region: z.string().default("us-central1"),
 
@@ -61,7 +58,15 @@ const component = new InfraComponent({
     // Internal Firewall
     enableInternalFirewall: z.boolean().default(true),
     internalSourceRanges: z.array(z.string()).default(["10.0.0.0/8"]),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: false,
+    proxiable: false,
+  },
+  connectionTypes: {},
+  configSchema: ConfigSchema,
   appComponentTypes: {},
   outputSchema: z.object({
     // Network outputs
@@ -79,44 +84,30 @@ const component = new InfraComponent({
   }),
 });
 
+
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
-  pulumi: async ({ $, inputs, gcp: gcpProvider }) => {
+component.implement(gcloudDeclaration, {
+  pulumi: async (ctx) => {
+    const { $, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
     const gcpOpts: import("@pulumi/pulumi").CustomResourceOptions = gcpProvider
       ? { provider: gcpProvider }
       : {};
-    const {
-      region,
-      routingMode,
-      mtu,
-      deleteDefaultRoutesOnCreate,
-      bgpBestPathSelectionMode,
-      bgpAlwaysCompareMed,
-      bgpInterRegionCost,
-      enableUlaInternalIpv6,
-      internalIpv6Range,
-      enableNat,
-      routerAsn,
-      natIpAllocateOption,
-      sourceSubnetworkIpRangesToNat,
-      enableNatLogging,
-      natLogFilter,
-      enableInternalFirewall,
-      internalSourceRanges,
-    } = inputs;
+    const { enableNat, enableNatLogging, natLogFilter, enableInternalFirewall } = config;
 
     // 1. Create VPC Network
     const vpc = new gcp.compute.Network($`vpc`, {
       autoCreateSubnetworks: false,
-      routingMode: routingMode,
-      mtu: mtu,
-      deleteDefaultRoutesOnCreate: deleteDefaultRoutesOnCreate,
-      bgpBestPathSelectionMode: bgpBestPathSelectionMode,
-      bgpAlwaysCompareMed: bgpAlwaysCompareMed,
-      bgpInterRegionCost: bgpInterRegionCost,
-      enableUlaInternalIpv6: enableUlaInternalIpv6,
-      internalIpv6Range: internalIpv6Range,
+      routingMode: ctx.inputs.routingMode,
+      mtu: ctx.inputs.mtu,
+      deleteDefaultRoutesOnCreate: ctx.inputs.deleteDefaultRoutesOnCreate,
+      bgpBestPathSelectionMode: ctx.inputs.bgpBestPathSelectionMode,
+      bgpAlwaysCompareMed: ctx.inputs.bgpAlwaysCompareMed,
+      bgpInterRegionCost: ctx.inputs.bgpInterRegionCost,
+      enableUlaInternalIpv6: ctx.inputs.enableUlaInternalIpv6,
+      internalIpv6Range: ctx.inputs.internalIpv6Range,
       description: "VPC network managed by sdlc.works",
     }, gcpOpts);
 
@@ -127,15 +118,15 @@ component.implement("gcloud", {
     if (enableNat) {
       router = new gcp.compute.Router($`router`, {
         network: vpc.id,
-        region: region,
-        bgp: { asn: routerAsn },
+        region: ctx.inputs.region,
+        bgp: { asn: ctx.inputs.routerAsn },
       }, gcpOpts);
 
       nat = new gcp.compute.RouterNat($`nat`, {
         router: router.name,
-        region: region,
-        natIpAllocateOption: natIpAllocateOption,
-        sourceSubnetworkIpRangesToNat: sourceSubnetworkIpRangesToNat,
+        region: ctx.inputs.region,
+        natIpAllocateOption: ctx.inputs.natIpAllocateOption,
+        sourceSubnetworkIpRangesToNat: ctx.inputs.sourceSubnetworkIpRangesToNat,
         logConfig: enableNatLogging
           ? { enable: true, filter: natLogFilter }
           : undefined,
@@ -146,7 +137,7 @@ component.implement("gcloud", {
     if (enableInternalFirewall) {
       new gcp.compute.Firewall($`allow-internal`, {
         network: vpc.id,
-        sourceRanges: internalSourceRanges,
+        sourceRanges: ctx.inputs.internalSourceRanges,
         allows: [
           { protocol: "icmp" },
           { protocol: "tcp", ports: ["0-65535"] },
@@ -167,6 +158,6 @@ component.implement("gcloud", {
       natId: nat?.id,
     };
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

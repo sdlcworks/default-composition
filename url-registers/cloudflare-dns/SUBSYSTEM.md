@@ -35,7 +35,7 @@ inputs:
       endpoint carrying both meanings is refused as contradictory.
   - name: edge-control-authority
     description: >
-      Environment-provided authority over the domain's zone and its edge
+      Declared world-relationship authority over the domain's zone and its edge
       compute account, sufficient to manage names, routes, and the re-addressing
       hop required by origin-addressed endpoints.
 outputs:

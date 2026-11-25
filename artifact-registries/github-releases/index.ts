@@ -1,3 +1,5 @@
+import githubDeclaration from "../../providers/github";
+
 import { z } from "zod";
 import { createReadStream, statSync } from "node:fs";
 import { request } from "node:https";
@@ -5,6 +7,7 @@ import {
   ArtifactRegistry,
   DeploymentArtifactType,
 } from "@sdlcworks/components";
+import * as pulumi from "@pulumi/pulumi";
 
 const registry = new ArtifactRegistry({
   acceptedArtifactTypes: [DeploymentArtifactType.file],
@@ -21,12 +24,12 @@ const registry = new ArtifactRegistry({
   }),
 });
 
-registry.implement("github", {
+registry.implement(githubDeclaration, {
   provision: async ({ config, state }) => {
     // No cloud resources needed — GitHub Releases is built into GitHub.
     // Persist config values to state so they're available during publish().
-    state.owner = config.owner;
-    state.repo = config.repo;
+    state.owner = pulumi.output(config.owner);
+    state.repo = pulumi.output(config.repo);
   },
   publish: async ({
     componentName,
@@ -34,19 +37,12 @@ registry.implement("github", {
     version,
     tag,
     state,
-    getCredentials,
+    provider,
   }) => {
     const { owner, repo } = state;
 
     // Get GH_TOKEN from cloud_credentials (provider: "github")
-    const creds = getCredentials() as { GH_TOKEN: string };
-    const ghToken = creds.GH_TOKEN;
-    if (!ghToken) {
-      throw new Error(
-        "github-release: GH_TOKEN not found in cloud_credentials for provider 'github'. " +
-          "Add github credentials to cloud_credentials in the project config.",
-      );
-    }
+    const ghToken = provider.GH_TOKEN;
 
     const tagName = `${componentName}/${tag}`;
 
@@ -155,6 +151,6 @@ registry.implement("github", {
 
     return { artifacts: uploaded };
   },
-});
+}, ["release-publish"] as const);
 
 export default registry;

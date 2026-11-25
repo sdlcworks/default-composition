@@ -36,14 +36,14 @@ inputs:
       until durable network storage is provided.
   - name: aws-control-authority
     description: >
-      Environment-provided authority used only when the selected realization is
+      Declared world-relationship authority used only when the selected realization is
       AWS, sufficient to govern the cluster's EC2 hosts, encrypted host
       storage, narrowly scoped host identities, protected bootstrap state,
       autoscaling, replacement observation, and distinct control-plane and
       workload traffic surfaces in the selected account and region.
   - name: gcloud-control-authority
     description: >
-      Environment-provided authority used only when the selected realization is
+      Declared world-relationship authority used only when the selected realization is
       Google Cloud, sufficient to govern compute, storage, host bootstrap
       identity, network admission, scaling, and optional cloud traffic surfaces
       in the selected project and region.

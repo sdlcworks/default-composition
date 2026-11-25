@@ -1,3 +1,5 @@
+import localMacosDeclaration from "../../providers/local-macos";
+
 import { execFileSync } from "node:child_process";
 import { ArtifactRegistry, DeploymentArtifactType } from "@sdlcworks/components";
 import { z } from "zod";
@@ -23,7 +25,7 @@ function docker(args: string[]): void {
   execFileSync("docker", args, { stdio: "inherit" });
 }
 
-registry.implement(LOCAL_WORLD_LABEL, {
+registry.implement(localMacosDeclaration, {
   provision: async ({ config, state }) => {
     const effective = config as unknown as z.infer<typeof ConfigSchema>;
     const substrate = await ensureSubstrate();
@@ -47,6 +49,6 @@ registry.implement(LOCAL_WORLD_LABEL, {
     }
     return { artifacts: out };
   },
-});
+}, [] as const);
 
 export default registry;

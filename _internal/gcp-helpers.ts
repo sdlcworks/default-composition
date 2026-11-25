@@ -1,11 +1,9 @@
-import { createSign } from "crypto";
-
 /**
  * Mint a short-lived GCP OAuth2 access token from a service account JSON key
  * using the JWT bearer flow (RFC 7523).
  *
  * This avoids pulling in google-auth-library, which is not available in the
- * infra-components runtime. Uses Node.js built-in crypto for RSA-SHA256 signing.
+ * infra-components runtime. Uses WebCrypto for RSA-SHA256 signing.
  *
  * @param saKeyJson - The raw JSON string of a GCP service account key file
  * @returns A short-lived OAuth2 access token string
@@ -24,17 +22,35 @@ export async function mintGcpAccessToken(saKeyJson: string): Promise<string> {
     iat: now,
     exp: now + 3600,
   };
-  const b64url = (s: string | Buffer) =>
-    (Buffer.isBuffer(s) ? s : Buffer.from(s))
-      .toString("base64")
+  const b64url = (bytes: Uint8Array) =>
+    btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
       .replace(/=+$/g, "")
       .replace(/\+/g, "-")
       .replace(/\//g, "_");
+  const encode = (value: string) => new TextEncoder().encode(value);
   const signingInput =
-    `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claim))}`;
-  const signer = createSign("RSA-SHA256");
-  signer.update(signingInput);
-  const signature = b64url(signer.sign(sa.private_key));
+    `${b64url(encode(JSON.stringify(header)))}.${b64url(encode(JSON.stringify(claim)))}`;
+  const pem = sa.private_key
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s/g, "");
+  const keyBytes = Uint8Array.from(atob(pem), (character) =>
+    character.charCodeAt(0)
+  );
+  const key = await globalThis.crypto.subtle.importKey(
+    "pkcs8",
+    keyBytes,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = b64url(new Uint8Array(
+    await globalThis.crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      key,
+      encode(signingInput),
+    ),
+  ));
   const jwt = `${signingInput}.${signature}`;
 
   const res = await fetch("https://oauth2.googleapis.com/token", {

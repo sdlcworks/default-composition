@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -225,8 +228,9 @@ const component = new InfraComponent({
   }),
 });
 
-component.implement("aws", {
-  pulumi: async ({ $, inputs, aws: provider }) => {
+component.implement(awsDeclaration, {
+  pulumi: async ({ $, inputs, provider: world }) => {
+    const provider = awsProviderFromWorld($`aws-provider`, world);
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
       : {};
@@ -334,7 +338,7 @@ component.implement("aws", {
       hostedZoneId: pulumi.output(CLOUDFRONT_HOSTED_ZONE_ID),
     };
   },
-});
+}, ["infrastructure"] as const);
 
 function buildOrigin(
   origin: Origin,

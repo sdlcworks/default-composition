@@ -1,3 +1,6 @@
+import awsDeclaration, { type AwsWorld } from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -21,7 +24,6 @@ import {
   DeploymentArtifactType,
   InfraComponent,
   connectionHandler,
-  type CloudCredentialAWS,
 } from "@sdlcworks/components";
 import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
@@ -194,9 +196,7 @@ type FunctionConfig = z.infer<typeof FunctionConfigSchema>;
 type AppComponentConfig = z.infer<typeof AppComponentSchema>;
 type Allocation = z.infer<typeof AllocationSchema>;
 type DeployedArtifact = z.infer<typeof DeployedArtifactSchema>;
-type AwsCredentials = CloudCredentialAWS & {
-  AWS_SESSION_TOKEN?: string;
-};
+type AwsCredentials = AwsWorld;
 
 type EcrImageReference = {
   accountId: string;
@@ -328,21 +328,6 @@ function clientConfig(creds: AwsCredentials) {
       sessionToken: creds.AWS_SESSION_TOKEN,
     },
   };
-}
-
-function credentialsFrom(getCredentials: () => unknown): AwsCredentials {
-  const creds = getCredentials() as AwsCredentials;
-  if (
-    !creds?.AWS_ACCESS_KEY_ID ||
-    !creds?.AWS_SECRET_ACCESS_KEY ||
-    !creds?.AWS_REGION
-  ) {
-    throw new Error(
-      "aws-lambda: AWS credentials must include AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION.",
-    );
-  }
-
-  return creds;
 }
 
 async function resolveAccountId(creds: AwsCredentials): Promise<string> {
@@ -594,7 +579,7 @@ async function waitForLambdaUpdate(
   );
 }
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     accountId: z.string().optional(),
     region: z.string().optional(),
@@ -620,9 +605,10 @@ component.implement("aws", {
     deployedArtifacts: {},
   },
 
-  pulumi: async ({ $, inputs, state, aws: provider, getCredentials }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const provider = awsProviderFromWorld($`aws-provider`, world);
     const config = inputs as Config;
-    const creds = credentialsFrom(getCredentials);
+    const creds = world;
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
       : {};
@@ -932,14 +918,14 @@ component.implement("aws", {
     }),
   ]),
 
-  upsertArtifacts: async ({ buildArtifacts, state, getCredentials }) => {
+  upsertArtifacts: async ({ buildArtifacts, state, provider }) => {
     const entries = Object.entries(buildArtifacts);
     if (entries.length === 0) {
       console.error("aws-lambda: no artifacts to deploy");
       return;
     }
 
-    const creds = credentialsFrom(getCredentials);
+    const creds = provider;
     const accountId = await resolveAccountId(creds);
     const lambda = new LambdaClient(clientConfig(creds));
     const ecr = new ECRClient(clientConfig(creds));
@@ -1020,6 +1006,6 @@ component.implement("aws", {
 
     state.deployedArtifacts = deployedArtifacts;
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

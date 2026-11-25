@@ -1,7 +1,8 @@
 ---
 name: infrastructure-environment
 definition: >
-  Owns reviewed infrastructure intent, provider and edge authority boundaries,
+  Owns reviewed infrastructure intent, the selection of worlds and the
+  credential material supplied for each governed relationship,
   adopted external identities, and environment-wide placement choices, and
   receives credential-free identities and published addresses from the
   infrastructure it governs. It exists because infrastructure subsystems
@@ -108,23 +109,13 @@ outputs:
     description: >
       Reviewed document-store project, topology, sizing, backing cloud,
       recoverability, and termination-protection posture.
-  - name: aws-control-authority
+  - name: world-material-selection
     description: >
-      Authority over the selected AWS account and region, supplied only to
-      environment infrastructure whose declared realization requires it.
-  - name: gcloud-control-authority
-    description: >
-      Authority over the selected Google Cloud project and region, supplied
-      only to environment infrastructure whose declared realization requires
-      it.
-  - name: atlas-control-authority
-    description: >
-      Authority over the selected document-database organization or project,
-      supplied only to the governed document store.
-  - name: edge-control-authority
-    description: >
-      Authority over the selected domain zone and its public edge account,
-      supplied to public-name and edge-delivery infrastructure.
+      The reviewed selection of which world serves each governed
+      relationship, and the credential material supplied for it. Flows
+      outward because selecting a world and supplying its material are this
+      environment's choices, while judging that material and constructing
+      authority from it belong to the declared world relationships.
   - name: edge-certificate
     description: >
       Reviewed certificate authority meaning supplied when custom public names

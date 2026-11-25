@@ -1,10 +1,14 @@
+import gcloudDeclaration from "../providers/gcloud";
+import awsDeclaration, { type AwsWorld } from "../providers/aws";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import {
   InfraComponent,
   connectionHandler,
   DeploymentArtifactType,
-  type CloudCredentialAWS,
 } from "@sdlcworks/components";
 import { K3sInternalCI, PublicCI, R2BucketCI } from "../_internal/interfaces";
 
@@ -455,6 +459,9 @@ const StatefulSetConfigSchema = z.object({
 
   replicas: z.number().int().min(1).default(1),
 
+  // Horizontal Pod Autoscaler — scales replicas based on CPU/memory utilisation.
+  autoscaling: AutoscalingSchema.optional(),
+
   // Headless service name.  Defaults to the app component name.
   serviceName: z.string().optional(),
 
@@ -553,43 +560,7 @@ const PostgresDeployConfigSchema = z.object({
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    // The k3s component itself is not stateful in the framework sense; stateful
-    // workloads (StatefulSets with PVCs) are managed by allocateWithPulumiCtx.
-    stateful: false,
-    proxiable: false,
-  },
-  acceptedArtifactTypes: [DeploymentArtifactType.oci_spec_image],
-  connectionTypes: {
-    public: {
-      description:
-        "exposes the app component through the cluster's reviewed public HTTP ingress",
-      interface: PublicCI,
-    },
-    internal: {
-      description:
-        "allows internal cluster communication between app components via k8s Service DNS",
-      interface: K3sInternalCI,
-    },
-    tcp: {
-      description:
-        "allows internal TCP communication (plain, TLS, or mTLS) between app components via k8s Service DNS",
-      interface: K3sInternalCI,
-    },
-    postgres: {
-      description:
-        "allows internal postgres database access between app components via k8s Service DNS",
-      interface: K3sInternalCI,
-    },
-    "r2-bucket": {
-      description:
-        "consumer-side: a K3s workload connects to a Cloudflare R2 bucket (metadata injected as env vars at deploy time)",
-      interface: R2BucketCI,
-    },
-  } as const,
-  connectionInterfaces: [],
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // ---- Node Map ----
     //
     // At least one node must be defined with role "server".  The first server
@@ -762,7 +733,13 @@ const component = new InfraComponent({
           .default(7)
           .describe("How many days Prometheus keeps metrics data"),
       })
-      .default({}),
+      .default({
+        enabled: false,
+        mode: "self-hosted",
+        grafanaNodePort: 30080,
+        grafanaAdminPassword: "admin",
+        retentionDays: 7,
+      }),
 
     // ---- Postgres Clusters (CloudNativePG) ----
     //
@@ -815,7 +792,45 @@ const component = new InfraComponent({
     aws: AwsK3sConfigSchema.optional().describe(
       "AWS-only private EC2 fleet, placement, availability, and admission posture. Required for the AWS realization.",
     ),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    // The k3s component itself is not stateful in the framework sense; stateful
+    // workloads (StatefulSets with PVCs) are managed by allocateWithPulumiCtx.
+    stateful: false,
+    proxiable: false,
+  },
+  acceptedArtifactTypes: [DeploymentArtifactType.oci_spec_image],
+  connectionTypes: {
+    public: {
+      description:
+        "exposes the app component through the cluster's reviewed public HTTP ingress",
+      interface: PublicCI,
+    },
+    internal: {
+      description:
+        "allows internal cluster communication between app components via k8s Service DNS",
+      interface: K3sInternalCI,
+    },
+    tcp: {
+      description:
+        "allows internal TCP communication (plain, TLS, or mTLS) between app components via k8s Service DNS",
+      interface: K3sInternalCI,
+    },
+    postgres: {
+      description:
+        "allows internal postgres database access between app components via k8s Service DNS",
+      interface: K3sInternalCI,
+    },
+    "r2-bucket": {
+      description:
+        "consumer-side: a K3s workload connects to a Cloudflare R2 bucket (metadata injected as env vars at deploy time)",
+      interface: R2BucketCI,
+    },
+  } as const,
+  connectionInterfaces: [],
+  configSchema: ConfigSchema,
   appComponentTypes: {
     "tcp-service": TcpServiceDeployConfigSchema,
     "http-service": HttpServiceDeployConfigSchema,
@@ -854,9 +869,10 @@ const component = new InfraComponent({
   }),
 });
 
+
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
+component.implement(gcloudDeclaration, {
   stateSchema: z.object({
     // Full kubeconfig YAML string retrieved from the init server after boot.
     // Used by allocateWithPulumiCtx and upsertArtifacts to talk to the k8s API.
@@ -877,7 +893,7 @@ component.implement("gcloud", {
       }),
     ),
     // Cluster-wide defaults forwarded from infra config so allocateWithPulumiCtx
-    // can apply them without access to the original inputs.
+    // can apply them without access to the original config.
     defaultResourceLimits: ResourceQuantitySchema.optional(),
     defaultResourceRequests: ResourceQuantitySchema.optional(),
     defaultNamespaceQuota: NamespaceQuotaSchema.optional(),
@@ -918,29 +934,11 @@ component.implement("gcloud", {
     nodeIps: {},
   },
 
-  pulumi: async ({
-    $,
-    inputs,
-    state,
-    getCredentials,
-    gcp: gcpProvider,
-  }) => {
-    // Default opts for all GCP resources — uses the explicit provider from gen.ts
-    const gcpCreds = getCredentials() as
-      | { GCP_SERVICE_ACCOUNT_KEY?: string; GCP_PROJECT_ID?: string; GCP_REGION?: string }
-      | undefined;
-    const resolvedGcpProvider =
-      gcpProvider ??
-      (gcpCreds?.GCP_SERVICE_ACCOUNT_KEY
-        ? new gcp.Provider($`gcp`, {
-            credentials: gcpCreds.GCP_SERVICE_ACCOUNT_KEY,
-            project: gcpCreds.GCP_PROJECT_ID,
-            region: gcpCreds.GCP_REGION,
-          })
-        : undefined);
-    const gcpOpts: pulumi.CustomResourceOptions = resolvedGcpProvider
-      ? { provider: resolvedGcpProvider }
-      : {};
+  pulumi: async (ctx) => {
+    const { $, state, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpOpts: pulumi.CustomResourceOptions = { provider: gcpProvider };
 
     const {
       nodes,
@@ -966,7 +964,7 @@ component.implement("gcloud", {
       defaultResourceLimits,
       defaultResourceRequests,
       defaultNamespaceQuota,
-    } = inputs;
+    } = config;
 
     // ---- Partition nodes ----
     //
@@ -1141,7 +1139,7 @@ component.implement("gcloud", {
       : null;
 
     if (ccmServiceAccount) {
-      const projectId = getCredentials().GCP_PROJECT_ID;
+      const projectId = world.GCP_PROJECT_ID;
       const saEmail = pulumi.interpolate`serviceAccount:${ccmServiceAccount.email}`;
 
       new gcp.projects.IAMMember($`ccm-iam-lb`, {
@@ -1541,7 +1539,7 @@ component.implement("gcloud", {
         // Merge cluster-level and group-level network tags
         const groupTags = pulumi
           .output(clusterNetworkTags)
-          .apply((tags) => Array.from(new Set(tags)));
+          .apply((tags: string[]) => Array.from(new Set(tags)));
 
         // Access config for external IP
         const templateAccessConfigs = groupConfig.assignExternalIp
@@ -1604,19 +1602,22 @@ component.implement("gcloud", {
         );
 
         // Create Autoscaler
-        new gcp.compute.Autoscaler($`autoscaler-${groupName}`, {
-          zone: groupConfig.zone,
-          target: igm.selfLink,
-          autoscalingPolicy: {
-            minReplicas: autoscalingConfig.minNodes,
-            maxReplicas: autoscalingConfig.maxNodes,
-            cooldownPeriod: autoscalingConfig.cooldownPeriodSec,
-            cpuUtilization: {
-              target: autoscalingConfig.targetCpuUtilization,
+        new gcp.compute.Autoscaler(
+          $`autoscaler-${groupName}`,
+          {
+            zone: groupConfig.zone,
+            target: igm.selfLink,
+            autoscalingPolicy: {
+              minReplicas: autoscalingConfig.minNodes,
+              maxReplicas: autoscalingConfig.maxNodes,
+              cooldownPeriod: autoscalingConfig.cooldownPeriodSec,
+              cpuUtilization: {
+                target: autoscalingConfig.targetCpuUtilization,
+              },
             },
           },
           gcpOpts,
-        });
+        );
 
         autoscaledGroupResults.push({ groupName, igm });
       }
@@ -1686,13 +1687,10 @@ component.implement("gcloud", {
       };
     });
 
-    state.defaultResourceLimits =
-      defaultResourceLimits as typeof state.defaultResourceLimits;
-    state.defaultResourceRequests =
-      defaultResourceRequests as typeof state.defaultResourceRequests;
-    state.defaultNamespaceQuota =
-      defaultNamespaceQuota as typeof state.defaultNamespaceQuota;
-    (state as any).useCnpgOperator = Object.keys(inputs.postgresClusterConfig).length > 0;
+    state.defaultResourceLimits = pulumi.output(defaultResourceLimits);
+    state.defaultResourceRequests = pulumi.output(defaultResourceRequests);
+    state.defaultNamespaceQuota = pulumi.output(defaultNamespaceQuota);
+    (state as any).useCnpgOperator = Object.keys(config.postgresClusterConfig).length > 0;
 
     // ---- 8b. Create the default "components" Namespace ----
     //
@@ -1707,8 +1705,8 @@ component.implement("gcloud", {
       { metadata: { name: "components" } },
       { provider: defaultK8sProvider },
     );
-    state.defaultK8sProvider = defaultK8sProvider;
-    state.defaultNamespace = defaultNamespace;
+    (state as any).defaultK8sProvider = defaultK8sProvider;
+    (state as any).defaultNamespace = defaultNamespace;
 
     // ---- 8b-2. ACME resolver + HTTPS redirect middleware ----
     //
@@ -1717,7 +1715,7 @@ component.implement("gcloud", {
     // acme.json must be 0600 and owned by Traefik's uid, hence the init
     // container. HTTP-01 keeps proof-of-control on the direct name itself —
     // no DNS-authority credential enters the cluster.
-    if (inputs.acmeContact && !disableTraefik) {
+    if (config.acmeContact && !disableTraefik) {
       new k8s.apiextensions.CustomResource(
         $`traefik-acme`,
         {
@@ -1727,7 +1725,7 @@ component.implement("gcloud", {
           spec: {
             valuesContent: [
               "additionalArguments:",
-              `  - "--certificatesresolvers.${ACME_RESOLVER_NAME}.acme.email=${inputs.acmeContact}"`,
+              `  - "--certificatesresolvers.${ACME_RESOLVER_NAME}.acme.email=${config.acmeContact}"`,
               `  - "--certificatesresolvers.${ACME_RESOLVER_NAME}.acme.storage=${ACME_STORAGE_PATH}"`,
               `  - "--certificatesresolvers.${ACME_RESOLVER_NAME}.acme.httpchallenge.entrypoint=web"`,
               "persistence:",
@@ -1764,11 +1762,11 @@ component.implement("gcloud", {
 
     // ---- 8c. Deploy monitoring (Grafana — hosted or self-hosted) ----
 
-    if (inputs.monitoring.enabled) {
-      if (inputs.monitoring.mode === "hosted" && inputs.monitoring.grafanaCloud) {
+    if (config.monitoring.enabled) {
+      if (config.monitoring.mode === "hosted" && config.monitoring.grafanaCloud) {
         // Hosted: Deploy Grafana Alloy agent → ships metrics/logs to Grafana Cloud.
         // No Prometheus, Grafana, or storage on the cluster — just a lightweight DaemonSet.
-        const gc = inputs.monitoring.grafanaCloud;
+        const gc = config.monitoring.grafanaCloud;
 
         const alloyConfig = `
 logging {
@@ -1987,15 +1985,15 @@ loki.write "grafana_cloud" {
             },
             values: {
               grafana: {
-                adminPassword: inputs.monitoring.grafanaAdminPassword,
+                adminPassword: config.monitoring.grafanaAdminPassword,
                 service: {
                   type: "NodePort",
-                  nodePort: inputs.monitoring.grafanaNodePort,
+                  nodePort: config.monitoring.grafanaNodePort,
                 },
               },
               prometheus: {
                 prometheusSpec: {
-                  retention: `${inputs.monitoring.retentionDays}d`,
+                  retention: `${config.monitoring.retentionDays}d`,
                   resources: {
                     requests: { cpu: "100m", memory: "256Mi" },
                     limits: { cpu: "500m", memory: "512Mi" },
@@ -2014,7 +2012,7 @@ loki.write "grafana_cloud" {
     //
     // Auto-install when postgresClusterConfig has entries.
 
-    const hasPostgresClusters = Object.keys(inputs.postgresClusterConfig).length > 0;
+    const hasPostgresClusters = Object.keys(config.postgresClusterConfig).length > 0;
     let cnpgOperatorRelease: k8s.helm.v3.Release | undefined;
 
     if (hasPostgresClusters) {
@@ -2033,7 +2031,9 @@ loki.write "grafana_cloud" {
       );
 
       // Create named postgres clusters from config
-      for (const [clusterName, pgConfig] of Object.entries(inputs.postgresClusterConfig)) {
+      for (const [clusterName, pgConfig] of Object.entries(
+        config.postgresClusterConfig,
+      ) as [string, z.infer<typeof PostgresClusterConfigSchema>][]) {
         const pgNamespace = "components";
         const pgOpts = {
           provider: defaultK8sProvider,
@@ -2090,7 +2090,7 @@ loki.write "grafana_cloud" {
 
     // Store for allocateWithPulumiCtx — kept for backward compat
     (state as any).cnpgOperatorRelease = cnpgOperatorRelease;
-    (state as any).postgresClusterConfig = inputs.postgresClusterConfig;
+    (state as any).postgresClusterConfig = config.postgresClusterConfig;
 
     // ---- 9. Build output node map ----
     //
@@ -2220,7 +2220,7 @@ loki.write "grafana_cloud" {
     $,
     envStore,
     buildArtifact,
-    getCredentials,
+    provider: world,
   }) => {
     const provider = new k8s.Provider($`k8s-provider-${name}`, {
       kubeconfig: state.kubeconfig as string,
@@ -2250,14 +2250,14 @@ loki.write "grafana_cloud" {
     // Ensure all resources are created AFTER the components namespace exists.
     // Without this, Pulumi creates them in parallel and they fail with
     // "namespaces components not found" until the namespace is ready.
-    const defaultNs = state.defaultNamespace as k8s.core.v1.Namespace | undefined;
+    const defaultNs = (state as any).defaultNamespace as k8s.core.v1.Namespace | undefined;
     const baseOpts = defaultNs
       ? { provider, dependsOn: [defaultNs] }
       : opts;
 
     const createImagePullSecret = (namespaceName: string): k8s.core.v1.Secret | undefined => {
       if (!registryHost || state.cloudProvider === "aws") return undefined;
-      const creds = getCredentials();
+      const creds = world;
       return new k8s.core.v1.Secret(
         $`ar-pull-${name}`,
         {
@@ -2965,16 +2965,11 @@ loki.write "grafana_cloud" {
       },
     }),
   ]) as any,
-});
+}, ["infrastructure"] as const);
 
 // ---- AWS Provider Implementation ----
 
-type AwsCredentials = CloudCredentialAWS & {
-  AWS_ACCESS_KEY_ID: string;
-  AWS_SECRET_ACCESS_KEY: string;
-  AWS_SESSION_TOKEN?: string;
-  AWS_REGION: string;
-};
+type AwsCredentials = AwsWorld;
 
 const EC2_SERVICE_PRINCIPAL = "ec2.amazonaws.com";
 const SSM_MANAGED_POLICY_ARN =
@@ -2986,23 +2981,9 @@ const CANONICAL_AMI_NAMES = {
 // Bump only when an explicit cluster migration is required for fixed servers.
 const AWS_SERVER_BOOTSTRAP_REVISION = 1;
 
-function requireAwsCredentials(value: CloudCredentialAWS): AwsCredentials {
-  const credentials = value as AwsCredentials;
-  if (
-    !credentials?.AWS_ACCESS_KEY_ID ||
-    !credentials?.AWS_SECRET_ACCESS_KEY ||
-    !credentials?.AWS_REGION
-  ) {
-    throw new Error(
-      "k3s (aws): AWS credentials must include AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION",
-    );
-  }
-  return credentials;
-}
-
 const sharedK3sLifecycle = component.providers["gcloud"]!;
 
-component.implement("aws", ({
+component.implement(awsDeclaration, ({
   stateSchema: z.object({
     kubeconfig: z.string(),
     apiServerUrl: z.string(),
@@ -3054,7 +3035,8 @@ component.implement("aws", ({
   },
 
   pulumi: async (ctx: any) => {
-    const { $, inputs, state, getCredentials, aws: awsProvider } = ctx;
+    const { $, inputs, state, provider: world } = ctx;
+    const awsProvider = awsProviderFromWorld($`aws-provider`, world);
     if (!inputs.aws) {
       throw new Error("k3s (aws): config.aws is required");
     }
@@ -3145,7 +3127,7 @@ component.implement("aws", ({
       );
     }
 
-    const credentials = requireAwsCredentials(getCredentials());
+    const credentials = world;
     const awsOpts: pulumi.CustomResourceOptions = awsProvider
       ? { provider: awsProvider }
       : {};
@@ -4162,7 +4144,7 @@ component.implement("aws", ({
   allocateWithPulumiCtx: sharedK3sLifecycle.allocateWithPulumiCtx as any,
   upsertArtifacts: sharedK3sLifecycle.upsertArtifacts as any,
   connect: sharedK3sLifecycle.connect as any,
-}) as any);
+}) as any, ["infrastructure"] as const);
 
 export default component;
 
@@ -4832,7 +4814,7 @@ function buildDeployment({
         annotations: { "pulumi.com/patchForce": "true" },
       },
       spec: {
-        replicas: config.autoscaling?.enabled ? undefined : config.replicas,
+        replicas: config.replicas,
         selector: { matchLabels: appLabels },
         strategy:
           config.strategy === "Recreate"

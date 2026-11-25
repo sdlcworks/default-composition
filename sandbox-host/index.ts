@@ -1,3 +1,5 @@
+import e2bLocalDeclaration from "../providers/e2b-local";
+
 import { ResidentArtifactMaterialSchema, type ResidentArtifactMaterial } from "@sdlcworks/components";
 import { ManagedEffectInvocationSchema, managedEffectDigest, type ManagedEffectInvocation, type ManagedEffectHistoricalDemand, type ManagedRealizationObservation, type ManagedLaunchMembership, type ManagedEffects, type ManagedMemberEvidence } from "@sdlcworks/components";
 import fs from "node:fs";
@@ -923,7 +925,7 @@ const component = new InfraComponent({
   outputSchema: z.object({ [REALIZED_SERVING_ENDPOINTS]: RealizedServingEndpointsSchema }),
 });
 
-component.implement(SANDBOX_REALIZATION, {
+component.implement(e2bLocalDeclaration, {
   managedEffects,
   world: "enactor-resident",
   stateSchema: z.object({ ingress_domain: IngressDomainSchema }),
@@ -967,6 +969,6 @@ component.implement(SANDBOX_REALIZATION, {
     if (failures.length > 0) throw new Error(failures.join("\n"));
     return { [REALIZED_SERVING_ENDPOINTS]: await witnessed(context) };
   },
-});
+}, [] as const);
 
 export default component;

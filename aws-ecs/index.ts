@@ -1,3 +1,6 @@
+import awsDeclaration, { type AwsWorld } from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
@@ -21,7 +24,6 @@ import {
   DeploymentArtifactType,
   InfraComponent,
   connectionHandler,
-  type CloudCredentialAWS,
 } from "@sdlcworks/components";
 import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
@@ -328,9 +330,7 @@ type ResolvedServiceConfig = ServiceConfig & {
 type AppComponentConfig = z.infer<typeof AppComponentSchema>;
 type Allocation = z.infer<typeof AllocationSchema>;
 type DeployedArtifact = z.infer<typeof DeployedArtifactSchema>;
-type AwsCredentials = CloudCredentialAWS & {
-  AWS_SESSION_TOKEN?: string;
-};
+type AwsCredentials = AwsWorld;
 type EcrImageReference = {
   accountId: string;
   region: string;
@@ -443,21 +443,6 @@ function inlinePolicyDocument(
       Statement: resolved,
     }),
   );
-}
-
-function credentialsFrom(getCredentials: () => unknown): AwsCredentials {
-  const creds = getCredentials() as AwsCredentials;
-  if (
-    !creds?.AWS_ACCESS_KEY_ID ||
-    !creds?.AWS_SECRET_ACCESS_KEY ||
-    !creds?.AWS_REGION
-  ) {
-    throw new Error(
-      "aws-ecs: AWS credentials must include AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION.",
-    );
-  }
-
-  return creds;
 }
 
 function clientConfig(creds: AwsCredentials) {
@@ -1213,7 +1198,7 @@ function externalRequestMetricResourceLabel(
     });
 }
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     accountId: z.string().optional(),
     region: z.string().optional(),
@@ -1259,11 +1244,12 @@ component.implement("aws", {
     deployedArtifacts: {},
   },
 
-  pulumi: async ({ $, inputs, state, aws: provider, getCredentials }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const provider = awsProviderFromWorld($`aws-provider`, world);
     const config = inputs as Config;
     const services = resolveServiceConfigs(config);
     validateResolvedConfig(config, services);
-    const creds = credentialsFrom(getCredentials);
+    const creds = world;
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
       : {};
@@ -2186,7 +2172,7 @@ component.implement("aws", {
     }),
   ]) as any,
 
-  upsertArtifacts: async ({ buildArtifacts, state, getCredentials }) => {
+  upsertArtifacts: async ({ buildArtifacts, state, provider }) => {
     const entries = Object.entries(buildArtifacts);
     if (entries.length === 0) {
       console.error("aws-ecs: no artifacts to deploy");
@@ -2206,7 +2192,7 @@ component.implement("aws", {
       throw new Error(CONFIG_SNAPSHOT_MISSING_ERROR);
     }
 
-    const creds = credentialsFrom(getCredentials);
+    const creds = provider;
     const accountId = await resolveAccountId(creds);
     const ecs = new ECSClient(clientConfig(creds));
     const ecr = new ECRClient(clientConfig(creds));
@@ -2275,6 +2261,6 @@ component.implement("aws", {
     state.deployedArtifacts = deployedArtifacts;
     state.activated = activated;
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

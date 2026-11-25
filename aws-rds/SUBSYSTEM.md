@@ -21,7 +21,7 @@ inputs:
       instance.
   - name: aws-control-authority
     description: >
-      Environment-provided authority to create and govern AWS infrastructure in
+      Declared world-relationship authority to create and govern AWS infrastructure in
       the selected account and region.
   - name: placement-context
     description: >

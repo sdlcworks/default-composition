@@ -1,3 +1,10 @@
+import hetznerDeclaration from "../providers/hetzner";
+import gcloudDeclaration from "../providers/gcloud";
+import awsDeclaration from "../providers/aws";
+import { hetznerProviderFromWorld } from "../_internal/hetzner-provider";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 /**
  * vm -- Unified multi-provider VM infrastructure component.
  *
@@ -212,20 +219,7 @@ function buildUserData(
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: true,
-    proxiable: false,
-  },
-  connectionTypes: {
-    public: {
-      description:
-        "exposes the VM via its public IPv4 address for external access",
-      interface: PublicCI,
-    },
-  } as const,
-  connectionInterfaces: [],
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // ---- Compute (2) ----
 
     machineSize: z
@@ -616,7 +610,22 @@ const component = new InfraComponent({
         "Enable automatic backups. " +
           "Hetzner only. GCloud/AWS: not applicable.",
       ),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: true,
+    proxiable: false,
+  },
+  connectionTypes: {
+    public: {
+      description:
+        "exposes the VM via its public IPv4 address for external access",
+      interface: PublicCI,
+    },
+  } as const,
+  connectionInterfaces: [],
+  configSchema: ConfigSchema,
   appComponentTypes: defaultAppComponentType(z.object({})),
   outputSchema: z.object({
     // Universal (all providers set these)
@@ -683,38 +692,42 @@ const component = new InfraComponent({
   }),
 });
 
+
 // ---- Hetzner Provider Implementation ----
 
-component.implement("hetzner", {
+component.implement(hetznerDeclaration, {
   stateSchema: z.object({
     ipv4Address: z.string().optional(),
     ipv6Address: z.string().optional(),
   }),
   initialState: {},
 
-  pulumi: async ({ $, inputs, state, hetzner: provider }) => {
+  pulumi: async (ctx) => {
+    const { $, state, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const provider = hetznerProviderFromWorld($`hetzner-provider`, world);
     // Common fields
-    const serverType = inputs.machineSize;
-    const location = inputs.region;
-    const image = (inputs.image as string) || "ubuntu-24.04";
-    const sshPublicKeys = inputs.sshPublicKeys as string[];
-    const userData = inputs.userData as string;
-    const startupScript = (inputs.startupScript as string) ?? "";
-    const labels = inputs.labels;
-    const deleteProtection = inputs.deletionProtection;
+    const serverType = config.machineSize;
+    const location = config.region;
+    const image = config.image || "ubuntu-24.04";
+    const sshPublicKeys = config.sshPublicKeys;
+    const userData = config.userData;
+    const startupScript = config.startupScript ?? "";
+    const labels = config.labels;
+    const deleteProtection = config.deletionProtection;
 
     // Build effective userData with startupScript merged via cloud-init.
     // Empty SSH keys array: Hetzner handles SSH via hcloud.SshKey resources, not cloud-init.
     const effectiveUserData = buildUserData([], userData, startupScript);
 
     // Hetzner-applicable fields (flat schema, read directly)
-    const ipv4Enabled = inputs.ipv4Enabled as boolean;
-    const ipv6Enabled = inputs.ipv6Enabled as boolean;
-    const firewallRules = (inputs.firewallRules ?? []) as any[];
-    const backups = inputs.backups as boolean;
-    const rebuildProtection = inputs.rebuildProtection as boolean;
-    const keepDisk = inputs.keepDisk as boolean;
-    const shutdownBeforeDeletion = inputs.shutdownBeforeDeletion as boolean;
+    const ipv4Enabled = config.ipv4Enabled;
+    const ipv6Enabled = config.ipv6Enabled;
+    const firewallRules = config.firewallRules ?? [];
+    const backups = config.backups;
+    const rebuildProtection = config.rebuildProtection;
+    const keepDisk = config.keepDisk;
+    const shutdownBeforeDeletion = config.shutdownBeforeDeletion;
 
     const providerOpts: pulumi.CustomResourceOptions = { provider };
 
@@ -857,7 +870,7 @@ component.implement("hetzner", {
     connectionHandler({
       interface: PublicCI,
       handler: async (_ctx: any) => {
-        const ip = state.ipv4Address;
+        const ip = state.ipv4Address as string | undefined;
         if (!ip) {
           throw new Error(
             "vm (hetzner): no public IPv4 address available. " +
@@ -865,59 +878,62 @@ component.implement("hetzner", {
           );
         }
         return {
-          uri: pulumi.output(ip as string),
+          uri: pulumi.output(ip),
           metadata: {
             appComponentType: "server",
-            host: ip as string,
+            host: ip,
             protocol: "https" as const,
           },
         };
       },
     }),
   ]) as any,
-});
+}, ["infrastructure"] as const);
 
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
+component.implement(gcloudDeclaration, {
   stateSchema: z.object({
     ipv4Address: z.string().optional(),
     internalIpAddress: z.string().optional(),
   }),
   initialState: {},
 
-  pulumi: async ({ $, inputs, state, gcp: provider }) => {
+  pulumi: async (ctx) => {
+    const { $, state, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const provider = gcloudProviderFromWorld($`gcloud-provider`, world);
     // Common fields
-    const machineType = inputs.machineSize;
-    const zone = inputs.region;
-    const sshPublicKeys = inputs.sshPublicKeys as string[];
-    const userData = inputs.userData;
-    const startupScript = inputs.startupScript as string | undefined;
-    const assignExternalIp = inputs.assignPublicIp;
-    const labels = inputs.labels as Record<string, string>;
-    const deletionProtection = inputs.deletionProtection;
+    const machineType = config.machineSize;
+    const zone = config.region;
+    const sshPublicKeys = config.sshPublicKeys;
+    const userData = config.userData;
+    const startupScript = config.startupScript;
+    const assignExternalIp = config.assignPublicIp;
+    const labels = config.labels;
+    const deletionProtection = config.deletionProtection;
 
     // GCloud-applicable fields (flat schema, read directly with concept-level names)
-    const imageFamily = inputs.imageFamily as string;
-    const imageProject = inputs.imageProject as string;
-    const bootDiskSizeGb = inputs.bootDiskSizeGb;
-    const bootDiskType = inputs.bootDiskType as string;
-    const sshUser = inputs.sshUser as string;
-    const networkId = inputs.networkId;
-    const subnetId = inputs.subnetId;
-    const networkTags = (inputs.networkTags ?? []) as string[];
-    const canIpForward = inputs.canIpForward as boolean;
-    const networkTier = inputs.networkTier as string;
-    const firewallRules = (inputs.firewallRules ?? []) as any[];
-    const preemptible = inputs.preemptible as boolean;
-    const automaticRestart = inputs.automaticRestart as boolean;
-    const onHostMaintenance = inputs.onHostMaintenance as string;
-    const secureBoot = inputs.secureBoot as boolean;
-    const virtualTpm = inputs.virtualTpm as boolean;
-    const integrityMonitoring = inputs.integrityMonitoring as boolean;
-    const userMetadata = (inputs.instanceMetadata ?? {}) as Record<string, string>;
-    const allowStoppingForUpdate = inputs.allowStoppingForUpdate as boolean;
-    const desiredStatus = inputs.desiredStatus as string;
+    const imageFamily = config.imageFamily;
+    const imageProject = config.imageProject;
+    const bootDiskSizeGb = config.bootDiskSizeGb;
+    const bootDiskType = config.bootDiskType;
+    const sshUser = config.sshUser;
+    const networkId = config.networkId;
+    const subnetId = config.subnetId;
+    const networkTags = config.networkTags ?? [];
+    const canIpForward = config.canIpForward;
+    const networkTier = config.networkTier;
+    const firewallRules = config.firewallRules ?? [];
+    const preemptible = config.preemptible;
+    const automaticRestart = config.automaticRestart;
+    const onHostMaintenance = config.onHostMaintenance;
+    const secureBoot = config.secureBoot;
+    const virtualTpm = config.virtualTpm;
+    const integrityMonitoring = config.integrityMonitoring;
+    const userMetadata = config.instanceMetadata ?? {};
+    const allowStoppingForUpdate = config.allowStoppingForUpdate;
+    const desiredStatus = config.desiredStatus;
 
     const gcpOpts: pulumi.CustomResourceOptions = { provider };
 
@@ -983,7 +999,7 @@ component.implement("gcloud", {
 
     if (sshPublicKeys.length > 0) {
       instanceMetadata["ssh-keys"] = sshPublicKeys
-        .map((key) => `${sshUser}:${key}`)
+        .map((key: string) => `${sshUser}:${key}`)
         .join("\n");
     }
 
@@ -1102,60 +1118,64 @@ component.implement("gcloud", {
     connectionHandler({
       interface: PublicCI,
       handler: async (_ctx: any) => {
-        if (!state.ipv4Address) {
+        const ip = state.ipv4Address as string | undefined;
+        if (!ip) {
           throw new Error(
             "vm (gcloud): no public IPv4 address available. " +
               "Ensure assignPublicIp is true in the component config.",
           );
         }
         return {
-          uri: pulumi.output(state.ipv4Address as string),
+          uri: pulumi.output(ip),
           metadata: {
             appComponentType: "server",
-            host: state.ipv4Address as string,
+            host: ip,
             protocol: "https" as const,
           },
         };
       },
     }),
   ]) as any,
-});
+}, ["infrastructure"] as const);
 
 // ---- AWS Provider Implementation ----
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     ipv4Address: z.string().optional(),
   }),
   initialState: {},
 
-  pulumi: async ({ $, inputs, state, aws: provider }) => {
+  pulumi: async (ctx) => {
+    const { $, state, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const provider = awsProviderFromWorld($`aws-provider`, world);
     // Common fields
-    const instanceType = inputs.machineSize;
-    const availabilityZone = inputs.region;
-    const amiId = inputs.image as string;
-    const sshPublicKeys = inputs.sshPublicKeys as string[];
-    const userData = inputs.userData as string;
-    const assignPublicIp = inputs.assignPublicIp;
-    const tags = inputs.labels as Record<string, string>;
-    const deletionProtection = inputs.deletionProtection;
+    const instanceType = config.machineSize;
+    const availabilityZone = config.region;
+    const amiId = config.image;
+    const sshPublicKeys = config.sshPublicKeys;
+    const userData = config.userData;
+    const assignPublicIp = config.assignPublicIp;
+    const tags = config.labels;
+    const deletionProtection = config.deletionProtection;
 
     // AWS-applicable fields (flat schema, read directly with concept-level names)
-    const imageFilter = inputs.imageFilter as string;
-    const imageFilterOwner = inputs.imageFilterOwner as string;
-    const bootDiskSizeGb = (inputs.bootDiskSizeGb as number | undefined) ?? 20;
-    const bootDiskType = inputs.bootDiskType as string;
-    const bootDiskEncrypted = inputs.bootDiskEncrypted as boolean;
-    const keyPairName = inputs.keyPairName as string;
-    const subnetId = (inputs.subnetId as string) ?? "";
-    const vpcId = (inputs.networkId as string) ?? "";
-    const allFirewallRules = (inputs.firewallRules ?? []) as any[];
+    const imageFilter = config.imageFilter;
+    const imageFilterOwner = config.imageFilterOwner;
+    const bootDiskSizeGb = config.bootDiskSizeGb ?? 20;
+    const bootDiskType = config.bootDiskType;
+    const bootDiskEncrypted = config.bootDiskEncrypted;
+    const keyPairName = config.keyPairName;
+    const subnetId = config.subnetId ?? "";
+    const vpcId = config.networkId ?? "";
+    const allFirewallRules = config.firewallRules ?? [];
     const ingressRules = allFirewallRules.filter((r: any) => r.direction === "in");
     const egressRules = allFirewallRules.filter((r: any) => r.direction === "out");
-    const requireImdsv2 = inputs.requireImdsv2 as boolean;
-    const instanceProfileArn = inputs.instanceProfileArn as string;
-    const enableSsmAccess = inputs.enableSsmAccess as boolean;
-    const allowStoppingForUpdate = inputs.allowStoppingForUpdate as boolean;
+    const requireImdsv2 = config.requireImdsv2;
+    const instanceProfileArn = config.instanceProfileArn;
+    const enableSsmAccess = config.enableSsmAccess;
+    const allowStoppingForUpdate = config.allowStoppingForUpdate;
 
     const awsOpts: pulumi.CustomResourceOptions = { provider };
 
@@ -1173,7 +1193,7 @@ component.implement("aws", {
     const effectiveUserData = buildUserData(
       sshPublicKeys,
       userData,
-      (inputs.startupScript as string) ?? "",
+      config.startupScript ?? "",
     );
 
     // ---- Merge tags with a component-managed Name tag ----
@@ -1377,23 +1397,24 @@ component.implement("aws", {
     connectionHandler({
       interface: PublicCI,
       handler: async (_ctx: any) => {
-        if (!state.ipv4Address) {
+        const ip = state.ipv4Address as string | undefined;
+        if (!ip) {
           throw new Error(
             "vm (aws): no public IPv4 address available. " +
               "Ensure assignPublicIp is true in the component config.",
           );
         }
         return {
-          uri: pulumi.output(state.ipv4Address as string),
+          uri: pulumi.output(ip),
           metadata: {
             appComponentType: "server",
-            host: state.ipv4Address as string,
+            host: ip,
             protocol: "https" as const,
           },
         };
       },
     }),
   ]) as any,
-});
+}, ["infrastructure"] as const);
 
 export default component;

@@ -1,3 +1,6 @@
+import gcloudDeclaration from "../providers/gcloud";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -27,13 +30,7 @@ const LogConfigSchema = z.object({
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: false,
-    proxiable: false,
-  },
-  connectionTypes: {},
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // Core (interop with VPC)
     networkId: z.string(),
 
@@ -61,7 +58,15 @@ const component = new InfraComponent({
     // Logging
     enableLogging: z.boolean().default(false),
     logConfig: LogConfigSchema.optional(),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: false,
+    proxiable: false,
+  },
+  connectionTypes: {},
+  configSchema: ConfigSchema,
   appComponentTypes: {},
   outputSchema: z.object({
     id: z.string(),
@@ -73,8 +78,11 @@ const component = new InfraComponent({
 
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
-  pulumi: async ({ $, inputs, gcp: gcpProvider }) => {
+component.implement(gcloudDeclaration, {
+  pulumi: async (ctx) => {
+    const { $, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
     const gcpOpts: import("@pulumi/pulumi").CustomResourceOptions = gcpProvider
       ? { provider: gcpProvider }
       : {};
@@ -93,7 +101,7 @@ component.implement("gcloud", {
       destinationRanges,
       enableLogging,
       logConfig,
-    } = inputs;
+    } = config;
 
     // Build allows/denies based on action
     const allows = action === "allow" ? rules : undefined;
@@ -124,6 +132,6 @@ component.implement("gcloud", {
       creationTimestamp: firewall.creationTimestamp,
     };
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

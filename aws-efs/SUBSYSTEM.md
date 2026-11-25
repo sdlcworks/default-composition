@@ -19,7 +19,7 @@ inputs:
       lifecycle, and per-consumer identity posture for the shared filesystem.
   - name: aws-control-authority
     description: >
-      Environment-provided authority to create and govern AWS infrastructure
+      Declared world-relationship authority to create and govern AWS infrastructure
       in the selected account and region.
   - name: placement-context
     description: >

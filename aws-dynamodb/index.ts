@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import {
@@ -264,7 +267,7 @@ function localSecondaryIndexes(table: TableConfig): aws.types.input.dynamodb.Tab
   }));
 }
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     region: z.string().optional(),
     tableFingerprints: z.record(z.string(), z.string()).default({}),
@@ -281,7 +284,8 @@ component.implement("aws", {
     allocations: {},
   },
 
-  pulumi: async ({ $, inputs, state, aws: provider }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const provider = awsProviderFromWorld($`aws-provider`, world);
     const { tables } = inputs as Config;
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
@@ -409,6 +413,6 @@ component.implement("aws", {
       },
     }),
   ]),
-});
+}, ["infrastructure"] as const);
 
 export default component;

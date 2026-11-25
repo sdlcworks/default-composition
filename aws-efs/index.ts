@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -336,7 +339,7 @@ function buildFileSystemPolicy(
   });
 }
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     region: z.string().optional(),
     kmsKeyArnFingerprint: z.string().optional(),
@@ -355,7 +358,8 @@ component.implement("aws", {
     clientSecurityGroupIds: {},
   },
 
-  pulumi: async ({ $, inputs, state, aws: provider }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const provider = awsProviderFromWorld($`aws-provider`, world);
     const config = inputs as Config;
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
@@ -552,6 +556,6 @@ component.implement("aws", {
 
     return outputs;
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

@@ -1,15 +1,15 @@
-import { createHash, randomBytes } from "node:crypto";
 
 import {
   InfraComponent,
   connectionHandler,
-  type CloudCredentialMongoDBAtlas,
 } from "@sdlcworks/components";
 import * as mongodbatlas from "@pulumi/mongodbatlas";
 import * as pulumi from "@pulumi/pulumi";
 import { z } from "zod";
 
 import { MongoCI } from "../_internal/interfaces";
+import mongodbatlasDeclaration, { type MongodbatlasWorld } from "../providers/mongodbatlas";
+import { atlasProviderFromWorld } from "../_internal/atlas-provider";
 
 const CLOUD_BACKENDS = ["AWS", "GCP", "AZURE"] as const;
 const DATABASE_ROLES = ["read", "readWrite"] as const;
@@ -30,13 +30,10 @@ const DEFAULT_USER_NAME = "app-user";
 const MAX_CLUSTER_NAME_LENGTH = 64;
 const MAX_USERNAME_LENGTH = 63;
 const MONGODB_SRV_SCHEME = "mongodb+srv://";
-const MONGODB_ATLAS_PROVIDER = "mongodbatlas";
 const CONFIG_SNAPSHOT_MISSING_ERROR =
   "mongodb: config snapshot missing from state; pulumi() must run before allocateWithPulumiCtx.";
 const REPLACEMENT_FINGERPRINT_ERROR =
   "mongodb: replacement refused because project identity, cloud backend, or cluster region changed. This would replace or re-anchor the Atlas cluster and risk total data loss; create a new component instance and migrate explicitly.";
-const CREDENTIAL_SHAPE_ERROR =
-  "mongodb: Atlas credentials must include MONGODB_ATLAS_PUBLIC_KEY and MONGODB_ATLAS_PRIVATE_KEY.";
 const ORG_ID_REQUIRED_ERROR =
   "mongodb: project creation requires MONGODB_ATLAS_ORG_ID in the mongodbatlas credential; supply it or set projectId to adopt an existing project.";
 
@@ -124,7 +121,7 @@ const AllocationSchema = z.object({
 type Config = z.infer<typeof ConfigSchema>;
 type AppComponentConfig = z.infer<typeof AppComponentSchema>;
 type Allocation = z.infer<typeof AllocationSchema>;
-type AtlasCredentials = CloudCredentialMongoDBAtlas;
+type AtlasCredentials = MongodbatlasWorld;
 
 type ProviderNames = {
   providerName: string;
@@ -154,27 +151,11 @@ const component = new InfraComponent({
   }),
 });
 
-function credentialsFrom(getCredentials: () => unknown): AtlasCredentials {
-  const creds = getCredentials() as Partial<AtlasCredentials> | undefined;
-
-  if (
-    !creds ||
-    typeof creds.MONGODB_ATLAS_PUBLIC_KEY !== "string" ||
-    creds.MONGODB_ATLAS_PUBLIC_KEY.length === 0 ||
-    typeof creds.MONGODB_ATLAS_PRIVATE_KEY !== "string" ||
-    creds.MONGODB_ATLAS_PRIVATE_KEY.length === 0
-  ) {
-    throw new Error(CREDENTIAL_SHAPE_ERROR);
-  }
-
-  return creds as AtlasCredentials;
-}
-
-function stableName(
+async function stableName(
   raw: string,
   fallback: string,
   maxLength = MAX_CLUSTER_NAME_LENGTH,
-): string {
+): Promise<string> {
   const sanitized = raw
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -185,17 +166,20 @@ function stableName(
     return baseName;
   }
 
-  const suffix = createHash("sha1")
-    .update(baseName)
-    .digest("hex")
-    .slice(0, NAME_HASH_LENGTH);
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-1",
+    new TextEncoder().encode(baseName),
+  );
+  const suffix = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("").slice(0, NAME_HASH_LENGTH);
   const prefixLength = maxLength - suffix.length - 1;
 
   return `${baseName.slice(0, prefixLength).replace(/-+$/g, "")}-${suffix}`;
 }
 
-function cidrResourceName(cidr: string): string {
-  return `ip-${stableName(cidr, DEFAULT_CIDR_NAME)}`;
+async function cidrResourceName(cidr: string): Promise<string> {
+  return `ip-${await stableName(cidr, DEFAULT_CIDR_NAME)}`;
 }
 
 function isSharedTier(instanceSize: string): boolean {
@@ -236,7 +220,13 @@ function assertReplacementFingerprint(
 }
 
 function generatedPassword(): string {
-  return randomBytes(PASSWORD_BYTE_LENGTH).toString("base64url");
+  const bytes = globalThis.crypto.getRandomValues(
+    new Uint8Array(PASSWORD_BYTE_LENGTH),
+  );
+  return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
+    .replace(/=+$/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 }
 
 function stripSrvScheme(value: string): string {
@@ -295,7 +285,7 @@ function autoscalingIgnoreChanges(
   return ignoreChanges.length > 0 ? ignoreChanges : undefined;
 }
 
-component.implement(MONGODB_ATLAS_PROVIDER, {
+component.implement(mongodbatlasDeclaration, {
   stateSchema: z.object({
     projectId: z.string().optional(),
     projectOwned: z.boolean().default(false),
@@ -313,14 +303,12 @@ component.implement(MONGODB_ATLAS_PROVIDER, {
     $,
     inputs,
     state,
-    mongodbatlas: provider,
-    getCredentials,
+    provider: world,
   }) => {
     const config = inputs as Config;
-    const creds = credentialsFrom(getCredentials);
-    const atlasOpts: pulumi.CustomResourceOptions = provider
-      ? { provider }
-      : {};
+    const creds = world;
+    const provider = atlasProviderFromWorld($`atlas-provider`, world);
+    const atlasOpts: pulumi.CustomResourceOptions = { provider };
     const requestedFingerprint = clusterFingerprint(config);
 
     assertReplacementFingerprint(
@@ -328,12 +316,12 @@ component.implement(MONGODB_ATLAS_PROVIDER, {
       requestedFingerprint,
     );
 
-    const clusterName = stableName(
+    const clusterName = await stableName(
       $`cluster`,
       DEFAULT_CLUSTER_NAME,
       MAX_CLUSTER_NAME_LENGTH,
     );
-    const projectName = stableName(
+    const projectName = await stableName(
       $`project`,
       DEFAULT_PROJECT_NAME,
       MAX_CLUSTER_NAME_LENGTH,
@@ -405,7 +393,7 @@ component.implement(MONGODB_ATLAS_PROVIDER, {
 
     for (const cidr of config.networkAccess.cidrs) {
       new mongodbatlas.ProjectIpAccessList(
-        $`access-${cidrResourceName(cidr)}`,
+        $`access-${await cidrResourceName(cidr)}`,
         {
           projectId,
           cidrBlock: cidr,
@@ -436,7 +424,7 @@ component.implement(MONGODB_ATLAS_PROVIDER, {
     deploymentConfig,
     state,
     $,
-    mongodbatlas: provider,
+    provider: world,
   }) => {
     const config = deploymentConfig as AppComponentConfig;
     const roles = config.roles ?? ["readWrite"];
@@ -468,10 +456,9 @@ component.implement(MONGODB_ATLAS_PROVIDER, {
 
     const existing = (state.allocations as Record<string, Allocation>)[name];
     const password = existing?.password ?? generatedPassword();
-    const username = stableName(name, DEFAULT_USER_NAME, MAX_USERNAME_LENGTH);
-    const atlasOpts: pulumi.CustomResourceOptions = provider
-      ? { provider }
-      : {};
+    const username = await stableName(name, DEFAULT_USER_NAME, MAX_USERNAME_LENGTH);
+    const provider = atlasProviderFromWorld($`atlas-provider`, world);
+    const atlasOpts: pulumi.CustomResourceOptions = { provider };
 
     new mongodbatlas.DatabaseUser(
       $`user-${username}`,
@@ -540,6 +527,6 @@ component.implement(MONGODB_ATLAS_PROVIDER, {
       },
     }),
   ]),
-});
+}, ["database-provisioning"] as const);
 
 export default component;
