@@ -328,7 +328,7 @@ const component = new InfraComponent({
 
 component.implement(awsDeclaration, {
   pulumi: async ({ $, inputs, provider: world }) => {
-    const provider = awsProviderFromWorld($`aws-provider`, world);
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
       : {};

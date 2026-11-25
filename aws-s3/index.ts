@@ -115,7 +115,7 @@ component.implement(awsDeclaration, {
   },
 
   pulumi: async ({ $, inputs, state, provider: world }) => {
-    const provider = awsProviderFromWorld($`aws-provider`, world);
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const {
       versioning,
       forceDestroy,

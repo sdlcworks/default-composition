@@ -161,7 +161,7 @@ component.implement(awsDeclaration, {
   initialState: {},
 
   pulumi: async ({ $, inputs, provider: world }) => {
-    const provider = awsProviderFromWorld($`aws-provider`, world);
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const {
       defaultRouteTableAssociation,
       defaultRouteTablePropagation,

@@ -121,7 +121,7 @@ component.implement(gcloudDeclaration, {
   pulumi: async (ctx) => {
     const { $, state, buildArtifacts, provider: world } = ctx;
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
-    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const {
       region,
       taskCount,

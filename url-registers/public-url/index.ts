@@ -65,7 +65,7 @@ register.implement(cloudflareDeclaration, {
     const config = ctx.config as unknown as Config;
     const { components, $ } = ctx;
 
-    const cfProvider = cloudflareProviderFromWorld(
+    const cfProvider = await cloudflareProviderFromWorld(
       $`cf-provider`,
       ctx.provider,
     );

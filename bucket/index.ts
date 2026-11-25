@@ -170,7 +170,7 @@ component.implement(gcloudDeclaration, {
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
     const location = config.location ?? "us-central1";
     const storageClass = config.storageClass ?? "STANDARD";
-    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
 
     const gcpOpts: pulumi.CustomResourceOptions = { provider: gcpProvider };
 
@@ -394,7 +394,7 @@ component.implement(cloudflareDeclaration, {
     const publicAccess: boolean = deploymentConfig.publicAccess === true;
 
     const cfOpts: pulumi.CustomResourceOptions = {
-      provider: cloudflareProviderFromWorld($`cf-provider-${name}`, world),
+      provider: await cloudflareProviderFromWorld($`cf-provider-${name}`, world),
     };
 
     const bucket = new cloudflare.R2Bucket(
@@ -631,7 +631,7 @@ component.implement(awsDeclaration, {
     $,
     provider: world,
   }) => {
-    const provider = awsProviderFromWorld($`aws-provider-${name}`, world);
+    const provider = await awsProviderFromWorld($`aws-provider-${name}`, world);
     const config = (state as any).config as
       | {
           versioning: boolean;

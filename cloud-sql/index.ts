@@ -326,7 +326,7 @@ component.implement(gcloudDeclaration, {
   initialState: { sqlInstances: {}, allocations: {} },
 
   pulumi: async ({ $, inputs, state, provider: world }) => {
-    const provider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const provider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const { region, labels, instances } = ConfigSchema.parse(inputs);
     const recorded = ((state as any).sqlInstances ?? {}) as Record<string, SqlInstanceState>;
     const next: Record<string, unknown> = {};
@@ -417,7 +417,7 @@ component.implement(gcloudDeclaration, {
   },
 
   allocateWithPulumiCtx: async ({ name, deploymentConfig, state, $, provider: world }) => {
-    const provider = gcloudProviderFromWorld($`gcloud-provider-${name}`, world);
+    const provider = await gcloudProviderFromWorld($`gcloud-provider-${name}`, world);
     const request = DatabaseAllocationSchema.parse(deploymentConfig);
     const sqlInstances = ((state as any).sqlInstances ?? {}) as Record<string, SqlInstanceState>;
     const instance = sqlInstances[request.instance];

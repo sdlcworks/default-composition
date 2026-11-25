@@ -307,7 +307,7 @@ component.implement(mongodbatlasDeclaration, {
   }) => {
     const config = inputs as Config;
     const creds = world;
-    const provider = atlasProviderFromWorld($`atlas-provider`, world);
+    const provider = await atlasProviderFromWorld($`atlas-provider`, world);
     const atlasOpts: pulumi.CustomResourceOptions = { provider };
     const requestedFingerprint = clusterFingerprint(config);
 
@@ -457,7 +457,7 @@ component.implement(mongodbatlasDeclaration, {
     const existing = (state.allocations as Record<string, Allocation>)[name];
     const password = existing?.password ?? generatedPassword();
     const username = await stableName(name, DEFAULT_USER_NAME, MAX_USERNAME_LENGTH);
-    const provider = atlasProviderFromWorld($`atlas-provider`, world);
+    const provider = await atlasProviderFromWorld($`atlas-provider`, world);
     const atlasOpts: pulumi.CustomResourceOptions = { provider };
 
     new mongodbatlas.DatabaseUser(

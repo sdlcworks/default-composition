@@ -36,7 +36,7 @@ register.implement(cloudflareDeclaration, {
 
     const results: Record<string, pulumi.Output<string>> = {};
 
-    const provider = cloudflareProviderFromWorld(
+    const provider = await cloudflareProviderFromWorld(
       $`cf-provider`,
       ctx.provider,
       { aliases: [{ name: $`cloudflare` }] },

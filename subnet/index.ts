@@ -114,7 +114,7 @@ component.implement(gcloudDeclaration, {
   pulumi: async (ctx) => {
     const { $, provider: world } = ctx;
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
-    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const gcpOpts: import("@pulumi/pulumi").CustomResourceOptions = gcpProvider
       ? { provider: gcpProvider }
       : {};

@@ -1056,7 +1056,7 @@ component.implement(gcloudDeclaration, {
   pulumi: async (ctx) => {
     const { $, state, buildArtifacts, envStore, provider: world } = ctx;
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
-    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const {
       region = "us-central1",
       ingress = "INGRESS_TRAFFIC_ALL",
@@ -1586,7 +1586,7 @@ component.implement(cloudflareDeclaration, {
     }
 
     const cfOpts: pulumi.CustomResourceOptions = {
-      provider: cloudflareProviderFromWorld($`cf-provider`, world),
+      provider: await cloudflareProviderFromWorld($`cf-provider`, world),
     };
 
     const scriptName = $`worker`;

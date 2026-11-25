@@ -76,7 +76,7 @@ component.implement(cloudflareDeclaration, {
       inputs;
 
     const cfOpts: pulumi.CustomResourceOptions = {
-      provider: cloudflareProviderFromWorld($`cf-provider`, world),
+      provider: await cloudflareProviderFromWorld($`cf-provider`, world),
     };
 
     const databaseName = $`database`;

@@ -247,7 +247,7 @@ component.implement(awsDeclaration, {
   initialState: {},
 
   pulumi: async ({ $, inputs, state, provider: world }) => {
-    const awsProvider = awsProviderFromWorld($`aws-provider`, world);
+    const awsProvider = await awsProviderFromWorld($`aws-provider`, world);
     const config = inputs as unknown as Config;
     const {
       cidrBlock,

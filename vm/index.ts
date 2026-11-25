@@ -705,7 +705,7 @@ component.implement(hetznerDeclaration, {
   pulumi: async (ctx) => {
     const { $, state, provider: world } = ctx;
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
-    const provider = hetznerProviderFromWorld($`hetzner-provider`, world);
+    const provider = await hetznerProviderFromWorld($`hetzner-provider`, world);
     // Common fields
     const serverType = config.machineSize;
     const location = config.region;
@@ -902,7 +902,7 @@ component.implement(gcloudDeclaration, {
   pulumi: async (ctx) => {
     const { $, state, provider: world } = ctx;
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
-    const provider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const provider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     // Common fields
     const machineType = config.machineSize;
     const zone = config.region;
@@ -1149,7 +1149,7 @@ component.implement(awsDeclaration, {
   pulumi: async (ctx) => {
     const { $, state, provider: world } = ctx;
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
-    const provider = awsProviderFromWorld($`aws-provider`, world);
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     // Common fields
     const instanceType = config.machineSize;
     const availabilityZone = config.region;

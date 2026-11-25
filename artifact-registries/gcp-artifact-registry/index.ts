@@ -27,7 +27,7 @@ registry.implement(gcloudDeclaration, {
   provision: async (ctx) => {
     const { state, $, provider: world } = ctx;
     const config = ctx.config as unknown as z.infer<typeof ConfigSchema>;
-    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const gcpOpts = { provider: gcpProvider };
     new gcp.artifactregistry.Repository($`repo`, {
       location: config.location,

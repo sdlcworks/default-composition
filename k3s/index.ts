@@ -937,7 +937,7 @@ component.implement(gcloudDeclaration, {
   pulumi: async (ctx) => {
     const { $, state, provider: world } = ctx;
     const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
-    const gcpProvider = gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const gcpOpts: pulumi.CustomResourceOptions = { provider: gcpProvider };
 
     const {
@@ -3036,7 +3036,7 @@ component.implement(awsDeclaration, ({
 
   pulumi: async (ctx: any) => {
     const { $, inputs, state, provider: world } = ctx;
-    const awsProvider = awsProviderFromWorld($`aws-provider`, world);
+    const awsProvider = await awsProviderFromWorld($`aws-provider`, world);
     if (!inputs.aws) {
       throw new Error("k3s (aws): config.aws is required");
     }

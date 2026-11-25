@@ -1,4 +1,3 @@
-import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { defineProvider } from "@sdlcworks/components";
 import type { ProviderCapabilityMap } from "@sdlcworks/providers";
 import { z } from "zod";
@@ -13,6 +12,7 @@ const schema = z.object({
 export type AwsWorld = z.infer<typeof schema>;
 
 async function validate(world: AwsWorld) {
+  const { GetCallerIdentityCommand, STSClient } = await import("@aws-sdk/client-sts");
   const client = new STSClient({
     region: world.AWS_REGION,
     credentials: {

@@ -359,7 +359,7 @@ component.implement(awsDeclaration, {
   },
 
   pulumi: async ({ $, inputs, state, provider: world }) => {
-    const provider = awsProviderFromWorld($`aws-provider`, world);
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const config = inputs as Config;
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
