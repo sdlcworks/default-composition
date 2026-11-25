@@ -20,7 +20,12 @@ export default defineProvider<"azure", typeof schema, AzureWorld, typeof capabil
     AZURE_DEVOPS_ORG: { description: "Azure DevOps organization name.", required: true, confidential: false },
     AZURE_DEVOPS_PAT: { description: "Azure DevOps personal access token.", required: true, confidential: true },
   } },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });

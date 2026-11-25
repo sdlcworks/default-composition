@@ -41,7 +41,12 @@ export default defineProvider<"aws", typeof schema, AwsWorld, typeof capabilitie
       AWS_REGION: { description: "AWS region in which infrastructure is managed.", required: true, confidential: false },
     },
   },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });

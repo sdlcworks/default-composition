@@ -160,6 +160,9 @@ register.implement(cloudflareDeclaration, {
     // --- Managed host-rewrite hop for origin-addressed components ---
     if (hostRewriteRoutes.length > 0) {
       const accountId = creds.CLOUDFLARE_ACCOUNT_ID;
+      if (!accountId) {
+        throw new Error(`${LOG_PREFIX} CLOUDFLARE_ACCOUNT_ID is required for managed host-rewrite routes`);
+      }
 
       createHostRewriteWorker({
         $,
@@ -173,6 +176,9 @@ register.implement(cloudflareDeclaration, {
     // --- Worker records (config-driven, not component-bound) ---
     if (workerRecords.length > 0) {
       const accountId = creds.CLOUDFLARE_ACCOUNT_ID;
+      if (!accountId) {
+        throw new Error(`${LOG_PREFIX} CLOUDFLARE_ACCOUNT_ID is required for worker custom-domain records`);
+      }
 
       for (const [key, rcfg] of workerRecords) {
         const fqdn = resolveFqdn(rcfg, config.domain);

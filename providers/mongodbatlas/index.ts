@@ -34,7 +34,12 @@ export default defineProvider<"mongodbatlas", typeof schema, MongodbatlasWorld, 
       MONGODB_ATLAS_ORG_ID: { description: "Optional MongoDB Atlas organization identifier used when creating a project.", required: false, confidential: false },
     },
   },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });

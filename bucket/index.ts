@@ -291,6 +291,9 @@ component.implement(cloudflareDeclaration, {
   }) => {
     const accountId = world.CLOUDFLARE_ACCOUNT_ID;
     const apiToken = world.CLOUDFLARE_API_TOKEN;
+    if (!accountId) {
+      throw new Error("bucket(cloudflare): CLOUDFLARE_ACCOUNT_ID is required for R2 object storage");
+    }
 
     // Resolve R2 perm group IDs by name at provision time. The Pulumi
     // cloudflare data source only knows the /user/ endpoint, which 403s for
@@ -383,6 +386,9 @@ component.implement(cloudflareDeclaration, {
     provider: world,
   }) => {
     const accountId = world.CLOUDFLARE_ACCOUNT_ID;
+    if (!accountId) {
+      throw new Error("bucket(cloudflare): CLOUDFLARE_ACCOUNT_ID is required for R2 object storage");
+    }
 
     const bucketName: string = deploymentConfig.name;
     const publicAccess: boolean = deploymentConfig.publicAccess === true;

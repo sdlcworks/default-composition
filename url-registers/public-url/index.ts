@@ -70,7 +70,6 @@ register.implement(cloudflareDeclaration, {
       ctx.provider,
     );
     const cfCreds = ctx.provider;
-    const accountId = cfCreds.CLOUDFLARE_ACCOUNT_ID;
     const zone = cloudflare.getZoneOutput(
       { filter: { name: config.domain } },
       { provider: cfProvider },
@@ -169,6 +168,10 @@ register.implement(cloudflareDeclaration, {
     }
 
     if (proxiedRoutes.length > 0) {
+      const accountId = cfCreds.CLOUDFLARE_ACCOUNT_ID;
+      if (!accountId) {
+        throw new Error("public-url: CLOUDFLARE_ACCOUNT_ID is required for proxied host-rewrite routes");
+      }
       createWorkerHostRewrite($, {
         accountId,
         zoneId: zone.zoneId,

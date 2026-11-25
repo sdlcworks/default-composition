@@ -10,7 +10,12 @@ const capabilities = {} satisfies ProviderCapabilityMap<LocalMacosWorld>;
 export default defineProvider<"local-macos", typeof schema, LocalMacosWorld, typeof capabilities>({
   label: "local-macos",
   credentialRequirement: { schema, elements: {} },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });

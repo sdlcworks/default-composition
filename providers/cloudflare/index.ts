@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const schema = z.object({
   CLOUDFLARE_API_TOKEN: z.string().min(1),
-  CLOUDFLARE_ACCOUNT_ID: z.string().min(1),
+  CLOUDFLARE_ACCOUNT_ID: z.string().min(1).optional(),
 }).passthrough();
 
 export type CloudflareWorld = z.infer<typeof schema>;
@@ -20,8 +20,8 @@ async function validate(world: CloudflareWorld) {
 const capabilities = {
   "name-registration": { description: "Registers public names and routes in Cloudflare.", validate: ({ world }: { world: CloudflareWorld }) => validate(world) },
   workers: { description: "Creates and updates Cloudflare Workers and their routes.", validate: ({ world }: { world: CloudflareWorld }) => validate(world) },
-  "object-store": { description: "Creates and manages Cloudflare object storage.", validate: ({ world }: { world: CloudflareWorld }) => validate(world) },
-  "d1-database": { description: "Creates and manages Cloudflare D1 databases.", validate: ({ world }: { world: CloudflareWorld }) => validate(world) },
+  "object-store": { description: "Creates and manages Cloudflare object storage.", validate: ({ world }: { world: CloudflareWorld }) => world.CLOUDFLARE_ACCOUNT_ID ? validate(world) : Promise.resolve({ outcome: "refused" as const, reason: "account-id-not-provided" }) },
+  "d1-database": { description: "Creates and manages Cloudflare D1 databases.", validate: ({ world }: { world: CloudflareWorld }) => world.CLOUDFLARE_ACCOUNT_ID ? validate(world) : Promise.resolve({ outcome: "refused" as const, reason: "account-id-not-provided" }) },
 } satisfies ProviderCapabilityMap<CloudflareWorld>;
 
 export default defineProvider<"cloudflare", typeof schema, CloudflareWorld, typeof capabilities>({
@@ -30,10 +30,15 @@ export default defineProvider<"cloudflare", typeof schema, CloudflareWorld, type
     schema,
     elements: {
       CLOUDFLARE_API_TOKEN: { description: "Cloudflare API token.", required: true, confidential: true },
-      CLOUDFLARE_ACCOUNT_ID: { description: "Cloudflare account identifier.", required: true, confidential: false },
+      CLOUDFLARE_ACCOUNT_ID: { description: "Cloudflare account identifier.", required: false, confidential: false },
     },
   },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });

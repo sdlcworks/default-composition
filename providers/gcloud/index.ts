@@ -35,7 +35,12 @@ export default defineProvider<"gcloud", typeof schema, GcloudWorld, typeof capab
       GCP_REGION: { description: "Optional default Google Cloud region.", required: false, confidential: false },
     },
   },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });

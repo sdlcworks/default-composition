@@ -13,7 +13,12 @@ const capabilities = { "release-publish": { description: "Publishes release arti
 export default defineProvider<"github", typeof schema, GithubWorld, typeof capabilities>({
   label: "github",
   credentialRequirement: { schema, elements: { GH_TOKEN: { description: "GitHub token authorized to publish releases.", required: true, confidential: true } } },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });

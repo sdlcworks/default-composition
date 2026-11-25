@@ -13,7 +13,12 @@ const capabilities = { infrastructure: { description: "Creates and manages infra
 export default defineProvider<"hetzner", typeof schema, HetznerWorld, typeof capabilities>({
   label: "hetzner",
   credentialRequirement: { schema, elements: { HCLOUD_TOKEN: { description: "Hetzner Cloud API token.", required: true, confidential: true } } },
-  initialize: async (material) =>
-    ({ outcome: "initialized", world: schema.parse(material) }),
+  initialize: async (material) => {
+    const parsed = schema.safeParse(material);
+    if (!parsed.success) {
+      return { outcome: "refused", reason: "credential-material-nonconforming" };
+    }
+    return { outcome: "initialized", world: parsed.data };
+  },
   capabilities,
 });
