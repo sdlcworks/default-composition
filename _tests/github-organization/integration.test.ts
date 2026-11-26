@@ -12,7 +12,9 @@ const resources: RegisteredResource[] = [];
 beforeAll(() => {
   pulumi.runtime.setMocks({
     newResource: (args) => {
-      resources.push({ type: args.type, name: args.name, inputs: args.inputs });
+      if (args.type !== "pulumi:pulumi:Stack") {
+        resources.push({ type: args.type, name: args.name, inputs: args.inputs });
+      }
       return { id: `${args.name}-external-id`, state: args.inputs };
     },
     call: (args) => args.inputs,
