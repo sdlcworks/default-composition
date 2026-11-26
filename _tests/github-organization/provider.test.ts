@@ -6,9 +6,10 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-async function loadProvider(response: Response | Error) {
+async function loadProvider(response?: Response | Error) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
-    expect(String(input)).toBe("https://github.example/api/v3/user");
+    expect(String(input)).toBe("https://api.github.com/user");
+    if (response === undefined) throw new Error("fetch must not be called");
     if (response instanceof Error) throw response;
     return response;
   }) as typeof fetch;
@@ -16,111 +17,98 @@ async function loadProvider(response: Response | Error) {
 }
 
 describe("github provider declaration", () => {
-  test("declares only the organization abilities the integration demands", async () => {
-    const declaration = await loadProvider(new Response("{}", {
-      status: 200,
-      headers: { "x-oauth-scopes": "repo, admin:org" },
-    }));
+  test("declares release publication and the organization abilities the integration demands", async () => {
+    const declaration = await loadProvider();
     expect(declaration.label).toBe("github");
-    expect(declaration.declaredCapabilities).toEqual([
+    expect([...declaration.declaredCapabilities].sort()).toEqual([
       "organization-membership-invitations",
       "organization-settings",
+      "release-publish",
     ]);
-    expect(declaration.credentialElements).toEqual({
-      token: {
-        description: "Classic GitHub token with admin:org scope",
-        required: true,
-        confidential: true,
-      },
-      baseUrl: {
-        description: "GitHub REST API base URL",
-        required: false,
-        confidential: false,
-      },
+    expect(Object.keys(declaration.credentialElements)).toEqual(["GH_TOKEN"]);
+    expect(declaration.credentialElements.GH_TOKEN).toMatchObject({
+      required: true,
+      confidential: true,
     });
   });
 
-  test("normalizes the API base and initializes an authenticated world", async () => {
-    const declaration = await loadProvider(new Response("{}", {
-      status: 200,
-      headers: { "x-oauth-scopes": "repo, admin:org" },
-    }));
+  test("initializes the stored envelope shape verbatim without probing", async () => {
+    const declaration = await loadProvider();
     await expect(declaration.initialize({
-      token: "secret-token",
-      baseUrl: "https://github.example/api/v3",
+      GH_TOKEN: "secret-token",
+      EXTRA: "carried",
     })).resolves.toEqual({
       outcome: "initialized",
-      world: {
-        token: "secret-token",
-        baseUrl: "https://github.example/api/v3/",
-        scopes: ["admin:org", "repo"],
-      },
+      world: { GH_TOKEN: "secret-token", EXTRA: "carried" },
     });
   });
 
   test("refuses malformed material without disclosing it", async () => {
-    const declaration = await loadProvider(new Response("{}", { status: 200 }));
+    const declaration = await loadProvider();
     const token = "never-print-this";
-    const result = await declaration.initialize({ token: 4, baseUrl: token });
+    const result = await declaration.initialize({ GH_TOKEN: 4, note: token });
     expect(result.outcome).toBe("refused");
     expect(JSON.stringify(result)).not.toContain(token);
   });
 
-  test("refuses rejected authentication without disclosing the token", async () => {
-    const declaration = await loadProvider(new Response("denied", { status: 401 }));
-    const token = "never-print-this";
-    const result = await declaration.initialize({
-      token,
-      baseUrl: "https://github.example/api/v3/",
-    });
-    expect(result).toEqual({ outcome: "refused", reason: "github-credentials-refused" });
-    expect(JSON.stringify(result)).not.toContain(token);
-  });
-
-  test("reports transport failures as unable to answer", async () => {
-    const declaration = await loadProvider(new Error("network unavailable"));
-    const result = await declaration.initialize({
-      token: "secret-token",
-      baseUrl: "https://github.example/api/v3/",
-    });
-    expect(result.outcome).toBe("unable-to-answer");
-  });
-
-  test("validates admin:org independently for both capabilities", async () => {
+  test("validates admin:org independently for both organization capabilities", async () => {
     const declaration = await loadProvider(new Response("{}", {
       status: 200,
       headers: { "x-oauth-scopes": "repo, admin:org" },
     }));
-    const initialized = await declaration.initialize({
-      token: "secret-token",
-      baseUrl: "https://github.example/api/v3/",
-    });
-    if (initialized.outcome !== "initialized") throw new Error(initialized.outcome);
+    const world = { GH_TOKEN: "secret-token" };
     await expect(declaration.validateCapability(
       "organization-settings",
-      initialized.world,
+      world,
     )).resolves.toEqual({ outcome: "satisfied" });
     await expect(declaration.validateCapability(
       "organization-membership-invitations",
-      initialized.world,
+      world,
     )).resolves.toEqual({ outcome: "satisfied" });
   });
 
-  test("names the missing-scope refusal for both capabilities", async () => {
+  test("names the missing-scope refusal for both organization capabilities", async () => {
     const declaration = await loadProvider(new Response("{}", {
       status: 200,
       headers: { "x-oauth-scopes": "repo" },
     }));
-    const initialized = await declaration.initialize({
-      token: "secret-token",
-      baseUrl: "https://github.example/api/v3/",
-    });
-    if (initialized.outcome !== "initialized") throw new Error(initialized.outcome);
-    for (const capability of declaration.declaredCapabilities) {
-      await expect(declaration.validateCapability(capability, initialized.world)).resolves.toEqual({
+    const world = { GH_TOKEN: "secret-token" };
+    for (const capability of ["organization-settings", "organization-membership-invitations"]) {
+      await expect(declaration.validateCapability(capability, world)).resolves.toEqual({
         outcome: "refused",
         reason: "github-admin-org-scope-required",
       });
     }
+  });
+
+  test("names the token refusal without disclosing the token", async () => {
+    const declaration = await loadProvider(new Response("denied", { status: 401 }));
+    const token = "never-print-this";
+    const result = await declaration.validateCapability(
+      "organization-settings",
+      { GH_TOKEN: token },
+    );
+    expect(result).toEqual({ outcome: "refused", reason: "github-token-verify-401" });
+    expect(JSON.stringify(result)).not.toContain(token);
+  });
+
+  test("validates release publication by token acceptance alone", async () => {
+    const declaration = await loadProvider(new Response("{}", {
+      status: 200,
+      headers: { "x-oauth-scopes": "repo" },
+    }));
+    await expect(declaration.validateCapability(
+      "release-publish",
+      { GH_TOKEN: "secret-token" },
+    )).resolves.toEqual({ outcome: "satisfied" });
+  });
+
+  test("reports transport failures as unable to answer", async () => {
+    const declaration = await loadProvider(new Error("network unavailable"));
+    const result = await declaration.validateCapability(
+      "organization-settings",
+      { GH_TOKEN: "secret-token" },
+    );
+    expect(result.outcome).toBe("unable-to-answer");
   });
 });

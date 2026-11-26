@@ -69,11 +69,7 @@ describe("github organization integration", () => {
         displayName: "Systemsway",
       },
       state,
-      provider: {
-        token: "secret-token",
-        baseUrl: "https://github.example/api/v3/",
-        scopes: ["admin:org"],
-      },
+      provider: { GH_TOKEN: "secret-token" },
     }));
     expect(resources.map(({ type }) => type)).toEqual([
       "pulumi:providers:github",
@@ -110,11 +106,7 @@ describe("github organization integration", () => {
         organizationLogin: "systemsway",
         organizationSettingsId: "settings-123",
       },
-      provider: {
-        token: "secret-token",
-        baseUrl: "https://github.example/api/v3/",
-        scopes: ["admin:org"],
-      },
+      provider: { GH_TOKEN: "secret-token" },
     }));
     expect(resources.map(({ type }) => type)).toEqual([
       "pulumi:providers:github",

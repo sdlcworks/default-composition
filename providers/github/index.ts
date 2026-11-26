@@ -21,7 +21,12 @@ async function probeUser(world: GithubWorld): Promise<Response> {
 }
 
 async function validateOrganizationAdministration(world: GithubWorld) {
-  const response = await probeUser(world);
+  let response: Response;
+  try {
+    response = await probeUser(world);
+  } catch (error) {
+    return { outcome: "unable-to-answer" as const, detail: String(error) };
+  }
   if (!response.ok) {
     return {
       outcome: "refused" as const,
@@ -44,7 +49,12 @@ const capabilities = {
   "release-publish": {
     description: "Publishes release artifacts to GitHub Releases.",
     validate: async ({ world }: { world: GithubWorld }) => {
-      const response = await probeUser(world);
+      let response: Response;
+      try {
+        response = await probeUser(world);
+      } catch (error) {
+        return { outcome: "unable-to-answer", detail: String(error) };
+      }
       return response.ok
         ? { outcome: "satisfied" }
         : { outcome: "refused", reason: `github-token-verify-${response.status}` };
