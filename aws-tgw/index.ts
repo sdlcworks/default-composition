@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -153,11 +156,12 @@ const component = new InfraComponent({
   }),
 });
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({}),
   initialState: {},
 
-  pulumi: async ({ $, inputs, aws: provider }) => {
+  pulumi: async ({ $, inputs, provider: world }) => {
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const {
       defaultRouteTableAssociation,
       defaultRouteTablePropagation,
@@ -334,6 +338,6 @@ component.implement("aws", {
           : undefined,
     };
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

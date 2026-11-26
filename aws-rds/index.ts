@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { createHash, randomBytes } from "node:crypto";
 
 import { InfraComponent, connectionHandler } from "@sdlcworks/components";
@@ -501,7 +504,7 @@ function sqlConnection(
   };
 }
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     securityGroupId: z.string().optional(),
     engineFingerprints: z.record(z.string(), z.string()).default({}),
@@ -514,9 +517,10 @@ component.implement("aws", {
     allocations: {},
   },
 
-  pulumi: async ({ $, inputs, state, aws: provider }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const config = inputs as Config;
-    const awsOpts: pulumi.CustomResourceOptions = provider ? { provider } : {};
+    const awsOpts: pulumi.CustomResourceOptions = { provider };
     const engineFingerprints = (state.engineFingerprints ?? {}) as Record<string, string>;
     const storedInstances = (state.instances ?? {}) as Record<string, InstanceState>;
 
@@ -783,6 +787,6 @@ component.implement("aws", {
         sqlConnection(state, selfComponentName, MYSQL_ENGINE),
     }),
   ]),
-});
+}, ["infrastructure"] as const);
 
 export default component;

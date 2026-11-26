@@ -1,3 +1,5 @@
+import localMacosDeclaration from "../../providers/local-macos";
+
 import * as k8s from "@pulumi/kubernetes";
 import * as pulumi from "@pulumi/pulumi";
 import { URLRegister } from "@sdlcworks/components";
@@ -28,7 +30,7 @@ const register = new URLRegister({
   }),
 });
 
-register.implement(LOCAL_WORLD_LABEL, {
+register.implement(localMacosDeclaration, {
   provision: async ({ config, state, components, $ }) => {
     const effective = config as unknown as z.infer<typeof ConfigSchema>;
     const substrate = await ensureSubstrate();
@@ -92,6 +94,6 @@ register.implement(LOCAL_WORLD_LABEL, {
     }
     return results;
   },
-});
+}, [] as const);
 
 export default register;

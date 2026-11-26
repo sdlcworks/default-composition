@@ -1,3 +1,5 @@
+import cloudflareDeclaration from "../providers/cloudflare";
+
 import { z } from "zod";
 
 import {
@@ -6,7 +8,7 @@ import {
 } from "@sdlcworks/components";
 
 import * as cloudflare from "@pulumi/cloudflare";
-import { cloudflareProviderFromCredentials } from "../_internal/cloudflare-provider";
+import { cloudflareProviderFromWorld } from "../_internal/cloudflare-provider";
 import * as pulumi from "@pulumi/pulumi";
 
 import { D1DatabaseCI } from "../_internal/interfaces";
@@ -56,7 +58,7 @@ const component = new InfraComponent({
 
 // ---- Cloudflare Provider Implementation ----
 
-component.implement("cloudflare", {
+component.implement(cloudflareDeclaration, {
   stateSchema: z.object({
     databaseName: z.string(),
     databaseId: z.string(),
@@ -68,13 +70,13 @@ component.implement("cloudflare", {
     $,
     inputs,
     state,
-    getCredentials,
+    provider: world,
   }) => {
     const { accountId, primaryLocationHint, jurisdiction, readReplication } =
       inputs;
 
     const cfOpts: pulumi.CustomResourceOptions = {
-      provider: cloudflareProviderFromCredentials($`cf-provider`, getCredentials),
+      provider: await cloudflareProviderFromWorld($`cf-provider`, world),
     };
 
     const databaseName = $`database`;
@@ -94,7 +96,7 @@ component.implement("cloudflare", {
     // Store state for connection handlers
     state.databaseName = databaseName;
     state.databaseId = database.uuid;
-    state.accountId = accountId;
+    state.accountId = pulumi.output(accountId);
 
     return {
       id: database.id,
@@ -116,6 +118,6 @@ component.implement("cloudflare", {
       },
     }),
   ]),
-});
+}, ["d1-database"] as const);
 
 export default component;

@@ -39,7 +39,7 @@ inputs:
       admission must be written explicitly, never inherited.
   - name: atlas-control-authority
     description: >
-      Environment-provided authority to create and govern resources in the
+      Declared world-relationship authority to create and govern resources in the
       document-database control plane's selected organization or project.
   - name: database-access-request
     description: >

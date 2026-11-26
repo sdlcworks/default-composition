@@ -30,7 +30,7 @@ inputs:
       declared together.
   - name: edge-control-authority
     description: >
-      Environment-provided authority over the selected public-name and edge
+      Declared world-relationship authority over the selected public-name and edge
       boundaries, sufficient to bind the declared name through either managed
       edge re-addressing or a host-preserving provider traffic surface.
 outputs:

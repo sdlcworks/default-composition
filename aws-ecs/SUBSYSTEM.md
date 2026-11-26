@@ -38,7 +38,7 @@ inputs:
       cannot span a boundary the fleet does not own.
   - name: aws-control-authority
     description: >
-      Environment-provided authority to create and govern AWS infrastructure
+      Declared world-relationship authority to create and govern AWS infrastructure
       in the selected account and region, including read authority over
       private image registry content in that account and region.
   - name: placement-context

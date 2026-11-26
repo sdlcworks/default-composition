@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import {
@@ -97,7 +100,7 @@ const component = new InfraComponent({
   }),
 });
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     bucketName: z.string(),
     arn: z.string(),
@@ -111,7 +114,8 @@ component.implement("aws", {
     regionalDomainName: "",
   },
 
-  pulumi: async ({ $, inputs, state, aws: provider }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const {
       versioning,
       forceDestroy,
@@ -257,6 +261,6 @@ component.implement("aws", {
       }),
     }),
   ],
-});
+}, ["infrastructure"] as const);
 
 export default component;

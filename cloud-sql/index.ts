@@ -1,3 +1,6 @@
+import gcloudDeclaration from "../providers/gcloud";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
@@ -315,14 +318,15 @@ const component = new InfraComponent({
   }),
 });
 
-component.implement("gcloud", {
+component.implement(gcloudDeclaration, {
   stateSchema: z.object({
     sqlInstances: z.record(z.string(), SqlInstanceStateSchema).default({}),
     allocations: z.record(z.string(), AllocationSchema).default({}),
   }),
   initialState: { sqlInstances: {}, allocations: {} },
 
-  pulumi: async ({ $, inputs, state }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const provider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const { region, labels, instances } = ConfigSchema.parse(inputs);
     const recorded = ((state as any).sqlInstances ?? {}) as Record<string, SqlInstanceState>;
     const next: Record<string, unknown> = {};
@@ -342,10 +346,12 @@ component.implement("gcloud", {
           const address = new gcp.compute.GlobalAddress(
             $`sql-peering-range-${index}`,
             { purpose: "VPC_PEERING", addressType: "INTERNAL", prefixLength: spec.network.peeringPrefixLength, network },
+            { provider },
           );
           const connection = new gcp.servicenetworking.Connection(
             $`sql-peering-${index}`,
             { network, service: SERVICE_NETWORKING, reservedPeeringRanges: [address.name] },
+            { provider },
           );
           peering = { range: address.name, connection };
           peerings.set(network, peering);
@@ -363,7 +369,7 @@ component.implement("gcloud", {
           deletionProtection: spec.deletionProtection,
           settings: instanceSettings(spec, labels, {}, peering?.range),
         },
-        { ...dependsOn, ignoreChanges: spec.storage.autoResize ? ["settings.diskSize"] : [] },
+        { provider, ...dependsOn, ignoreChanges: spec.storage.autoResize ? ["settings.diskSize"] : [] },
       );
 
       const replicas: Record<string, unknown> = {};
@@ -384,7 +390,7 @@ component.implement("gcloud", {
               peering?.range,
             ),
           },
-          { ...dependsOn, ignoreChanges: spec.storage.autoResize ? ["settings.diskSize"] : [] },
+          { provider, ...dependsOn, ignoreChanges: spec.storage.autoResize ? ["settings.diskSize"] : [] },
         );
         replicas[replicaKey] = {
           instanceName: instance.name,
@@ -410,7 +416,8 @@ component.implement("gcloud", {
     return { connectionNames } as any;
   },
 
-  allocateWithPulumiCtx: async ({ name, deploymentConfig, state, $ }) => {
+  allocateWithPulumiCtx: async ({ name, deploymentConfig, state, $, provider: world }) => {
+    const provider = await gcloudProviderFromWorld($`gcloud-provider-${name}`, world);
     const request = DatabaseAllocationSchema.parse(deploymentConfig);
     const sqlInstances = ((state as any).sqlInstances ?? {}) as Record<string, SqlInstanceState>;
     const instance = sqlInstances[request.instance];
@@ -436,6 +443,7 @@ component.implement("gcloud", {
     new gcp.sql.Database(
       $`db-${name}`,
       { instance: instance.instanceName, name: dbName, deletionPolicy: "ABANDON" },
+      { provider },
     );
     new gcp.sql.User(
       $`user-${name}`,
@@ -446,7 +454,7 @@ component.implement("gcloud", {
         host: instance.engine === "mysql" ? "%" : undefined,
         deletionPolicy: instance.engine === "postgres" ? "ABANDON" : undefined,
       },
-      { additionalSecretOutputs: ["password"] },
+      { provider, additionalSecretOutputs: ["password"] },
     );
 
     allocations[name] = { instanceKey: request.instance, dbName, dbUser, password: pulumi.secret(password) as unknown as string };
@@ -490,6 +498,6 @@ component.implement("gcloud", {
       connectionHandler({ interface: MysqlCI, handler: handlerFor("mysql") }),
     ];
   }) as any,
-});
+}, ["infrastructure"] as const);
 
 export default component;

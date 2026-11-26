@@ -12,7 +12,7 @@ inputs:
       indexing posture.
   - name: aws-control-authority
     description: >
-      Environment-provided authority to create and govern AWS infrastructure in
+      Declared world-relationship authority to create and govern AWS infrastructure in
       the selected account and region.
   - name: table-access-request
     description: >

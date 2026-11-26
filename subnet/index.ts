@@ -1,3 +1,6 @@
+import gcloudDeclaration from "../providers/gcloud";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -51,13 +54,7 @@ const FlowLogConfigSchema = z.object({
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: false,
-    proxiable: false,
-  },
-  connectionTypes: {},
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // Core (interop with VPC)
     networkId: z.string(),
     region: z.string().default("us-central1"),
@@ -81,7 +78,15 @@ const component = new InfraComponent({
     // Flow Logs
     enableFlowLogs: z.boolean().default(false),
     flowLogConfig: FlowLogConfigSchema.optional(),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: false,
+    proxiable: false,
+  },
+  connectionTypes: {},
+  configSchema: ConfigSchema,
   appComponentTypes: {},
   outputSchema: z.object({
     // Core outputs
@@ -102,42 +107,33 @@ const component = new InfraComponent({
   }),
 });
 
+
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
-  pulumi: async ({ $, inputs, gcp: gcpProvider }) => {
+component.implement(gcloudDeclaration, {
+  pulumi: async (ctx) => {
+    const { $, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const gcpOpts: import("@pulumi/pulumi").CustomResourceOptions = gcpProvider
       ? { provider: gcpProvider }
       : {};
-    const {
-      networkId,
-      region,
-      ipCidrRange,
-      purpose,
-      role,
-      stackType,
-      ipv6AccessType,
-      privateIpGoogleAccess,
-      privateIpv6GoogleAccess,
-      secondaryIpRanges,
-      enableFlowLogs,
-      flowLogConfig,
-    } = inputs;
+    const { purpose, privateIpGoogleAccess, enableFlowLogs, flowLogConfig } = config;
 
     // Proxy-type subnets (REGIONAL_MANAGED_PROXY, GLOBAL_MANAGED_PROXY) don't support privateIpGoogleAccess
     const isProxySubnet = purpose === "REGIONAL_MANAGED_PROXY" || purpose === "GLOBAL_MANAGED_PROXY";
 
     const subnet = new gcp.compute.Subnetwork($`subnet`, {
-      network: networkId,
-      region: region,
-      ipCidrRange: ipCidrRange,
-      purpose: purpose,
-      role: role,
-      stackType: stackType,
-      ipv6AccessType: ipv6AccessType,
+      network: ctx.inputs.networkId,
+      region: ctx.inputs.region,
+      ipCidrRange: ctx.inputs.ipCidrRange,
+      purpose: ctx.inputs.purpose,
+      role: ctx.inputs.role,
+      stackType: ctx.inputs.stackType,
+      ipv6AccessType: ctx.inputs.ipv6AccessType,
       privateIpGoogleAccess: isProxySubnet ? undefined : privateIpGoogleAccess,
-      privateIpv6GoogleAccess: privateIpv6GoogleAccess,
-      secondaryIpRanges: secondaryIpRanges,
+      privateIpv6GoogleAccess: ctx.inputs.privateIpv6GoogleAccess,
+      secondaryIpRanges: ctx.inputs.secondaryIpRanges,
       logConfig:
         enableFlowLogs && flowLogConfig
           ? {
@@ -161,6 +157,6 @@ component.implement("gcloud", {
       secondaryIpRanges: subnet.secondaryIpRanges,
     };
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

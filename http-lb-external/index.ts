@@ -1,8 +1,12 @@
+import gcloudDeclaration from "../providers/gcloud";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
 
 import * as gcp from "@pulumi/gcp";
+import * as pulumi from "@pulumi/pulumi";
 
 // ---- Zod Enums for Config Options ----
 
@@ -40,13 +44,7 @@ const SslCertConfigSchema = z.object({
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: false,
-    proxiable: false,
-  },
-  connectionTypes: {},
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // Core
     protocol: Protocol.default("HTTPS"),
     loadBalancingScheme: LoadBalancingScheme.default("EXTERNAL_MANAGED"),
@@ -70,7 +68,15 @@ const component = new InfraComponent({
     // Port Configuration
     httpsPort: z.number().default(443),
     httpPort: z.number().default(80),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: false,
+    proxiable: false,
+  },
+  connectionTypes: {},
+  configSchema: ConfigSchema,
   appComponentTypes: {},
   outputSchema: z.object({
     // Load Balancer
@@ -94,27 +100,27 @@ const component = new InfraComponent({
   }),
 });
 
+
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
-  pulumi: async ({ $, inputs, gcp: gcpProvider }) => {
+component.implement(gcloudDeclaration, {
+  pulumi: async (ctx) => {
+    const { $, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const gcpOpts: import("@pulumi/pulumi").CustomResourceOptions = gcpProvider
       ? { provider: gcpProvider }
       : {};
     const {
       protocol,
-      loadBalancingScheme,
-      defaultBackendServiceId,
       pathMatchers,
       hostRules,
       sslConfig,
       enableHttpToHttpsRedirect,
       reserveStaticIp,
-      ipVersion,
-      networkTier,
       httpsPort,
       httpPort,
-    } = inputs;
+    } = config;
 
     // 1. Create managed SSL certificates if needed
     const managedCerts: gcp.compute.ManagedSslCertificate[] = [];
@@ -134,16 +140,16 @@ component.implement("gcloud", {
 
     // 2. Create URL Map with routing rules
     const urlMap = new gcp.compute.URLMap($`url-map`, {
-      defaultService: defaultBackendServiceId,
-      pathMatchers: pathMatchers?.map((pm) => ({
+      defaultService: config.defaultBackendServiceId,
+      pathMatchers: pathMatchers?.map((pm: z.infer<typeof PathMatcherSchema>) => ({
         name: pm.name,
         defaultService: pm.defaultBackendServiceId,
-        pathRules: pm.pathRules?.map((pr) => ({
+        pathRules: pm.pathRules?.map((pr: z.infer<typeof PathRuleSchema>) => ({
           paths: pr.paths,
           service: pr.backendServiceId,
         })),
       })),
-      hostRules: hostRules?.map((hr) => ({
+      hostRules: hostRules?.map((hr: z.infer<typeof HostRuleSchema>) => ({
         hosts: hr.hosts,
         pathMatcher: hr.pathMatcher,
       })),
@@ -178,8 +184,7 @@ component.implement("gcloud", {
     let staticIp: gcp.compute.GlobalAddress | undefined;
     if (reserveStaticIp) {
       staticIp = new gcp.compute.GlobalAddress($`ip`, {
-        ipVersion: ipVersion,
-        networkTier: networkTier,
+        ipVersion: config.ipVersion,
         description: "Static IP managed by sdlc.works",
       }, gcpOpts);
     }
@@ -195,8 +200,8 @@ component.implement("gcloud", {
           target: httpsProxy.id,
           portRange: httpsPort.toString(),
           ipAddress: staticIp?.address,
-          loadBalancingScheme: loadBalancingScheme,
-          networkTier: networkTier,
+          loadBalancingScheme: ctx.inputs.loadBalancingScheme,
+          networkTier: ctx.inputs.networkTier,
         },
         gcpOpts,
       );
@@ -209,28 +214,33 @@ component.implement("gcloud", {
           target: httpProxy.id,
           portRange: httpPort.toString(),
           ipAddress: staticIp?.address,
-          loadBalancingScheme: loadBalancingScheme,
-          networkTier: networkTier,
+          loadBalancingScheme: ctx.inputs.loadBalancingScheme,
+          networkTier: ctx.inputs.networkTier,
         },
         gcpOpts,
       );
     }
 
+    const ipAddress =
+      staticIp?.address ??
+      httpsForwardingRule?.ipAddress ??
+      httpForwardingRule?.ipAddress;
+    if (!ipAddress) {
+      throw new Error("http-lb-external: no IP address resource was created");
+    }
+
     return {
-      urlMapId: urlMap.id,
-      urlMapSelfLink: urlMap.selfLink,
-      httpsProxyId: httpsProxy?.id,
-      httpProxyId: httpProxy?.id,
-      httpsForwardingRuleId: httpsForwardingRule?.id,
-      httpForwardingRuleId: httpForwardingRule?.id,
-      ipAddress:
-        staticIp?.address ||
-        httpsForwardingRule?.ipAddress ||
-        httpForwardingRule?.ipAddress,
-      ipAddressId: staticIp?.id,
-      managedSslCertIds: managedCerts.map((c) => c.id),
+      urlMapId: pulumi.output(urlMap.id),
+      urlMapSelfLink: pulumi.output(urlMap.selfLink),
+      httpsProxyId: pulumi.output(httpsProxy?.id),
+      httpProxyId: pulumi.output(httpProxy?.id),
+      httpsForwardingRuleId: pulumi.output(httpsForwardingRule?.id),
+      httpForwardingRuleId: pulumi.output(httpForwardingRule?.id),
+      ipAddress: pulumi.output(ipAddress),
+      ipAddressId: pulumi.output(staticIp?.id),
+      managedSslCertIds: pulumi.all(managedCerts.map((c) => c.id)),
     };
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

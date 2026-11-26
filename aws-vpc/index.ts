@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -229,7 +232,7 @@ function tags(
   };
 }
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     cidrBlockFingerprint: z.string().optional(),
     vpcId: z.string().optional(),
@@ -243,7 +246,8 @@ component.implement("aws", {
   }),
   initialState: {},
 
-  pulumi: async ({ $, inputs, state, aws: awsProvider }) => {
+  pulumi: async ({ $, inputs, state, provider: world }) => {
+    const awsProvider = await awsProviderFromWorld($`aws-provider`, world);
     const config = inputs as unknown as Config;
     const {
       cidrBlock,
@@ -496,6 +500,6 @@ component.implement("aws", {
 
     return outputs;
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;

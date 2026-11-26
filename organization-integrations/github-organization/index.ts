@@ -2,7 +2,7 @@ import * as github from "@pulumi/github";
 import * as pulumi from "@pulumi/pulumi";
 import { OrganizationIntegration } from "@sdlcworks/components";
 import { z } from "zod";
-import declaration, { type GitHubWorld } from "../../providers/github/index.ts";
+import declaration, { GITHUB_API_BASE_URL, type GitHubWorld } from "../../providers/github/index.ts";
 
 const integration = new OrganizationIntegration({
   metadata: {
@@ -33,9 +33,9 @@ function githubProvider(
   world: GitHubWorld,
 ) {
   return new github.Provider(name, {
-    token: pulumi.secret(world.token),
+    token: pulumi.secret(world.GH_TOKEN),
     owner: organizationLogin,
-    baseUrl: world.baseUrl,
+    baseUrl: GITHUB_API_BASE_URL,
   });
 }
 

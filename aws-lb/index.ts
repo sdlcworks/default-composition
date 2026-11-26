@@ -1,3 +1,6 @@
+import awsDeclaration from "../providers/aws";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+
 import { z } from "zod";
 
 import { InfraComponent } from "@sdlcworks/components";
@@ -323,8 +326,9 @@ const component = new InfraComponent({
   }),
 });
 
-component.implement("aws", {
-  pulumi: async ({ $, inputs, aws: provider }) => {
+component.implement(awsDeclaration, {
+  pulumi: async ({ $, inputs, provider: world }) => {
+    const provider = await awsProviderFromWorld($`aws-provider`, world);
     const awsOpts: pulumi.CustomResourceOptions = provider
       ? { provider }
       : {};
@@ -557,7 +561,7 @@ component.implement("aws", {
       securityGroupId: securityGroup.id,
     };
   },
-});
+}, ["infrastructure"] as const);
 
 function validateAbsentNetworkSettings(
   config: z.infer<typeof ConfigSchema>,

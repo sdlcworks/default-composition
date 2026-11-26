@@ -1,3 +1,5 @@
+import localMacosDeclaration from "../providers/local-macos";
+
 import * as k8s from "@pulumi/kubernetes";
 import * as pulumi from "@pulumi/pulumi";
 import {
@@ -116,7 +118,7 @@ function providerFrom(kubeconfig: pulumi.Input<string>, name: string) {
   return new k8s.Provider(name, { kubeconfig });
 }
 
-component.implement(LOCAL_WORLD_LABEL, {
+component.implement(localMacosDeclaration, {
   stateSchema: StateSchema,
 
   pulumi: async ({ $, state }) => {
@@ -438,7 +440,7 @@ component.implement(LOCAL_WORLD_LABEL, {
       });
     }
   },
-});
+}, [] as const);
 
 type KubeconfigShape = {
   clusters: Array<{

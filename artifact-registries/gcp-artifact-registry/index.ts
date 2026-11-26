@@ -1,26 +1,34 @@
+import gcloudDeclaration from "../../providers/gcloud";
+import { gcloudProviderFromWorld } from "../../_internal/gcloud-provider";
+
 import { z } from "zod";
 import { execSync } from "node:child_process";
 import { ArtifactRegistry, DeploymentArtifactType } from "@sdlcworks/components";
+import * as gcp from "@pulumi/gcp";
+import * as pulumi from "@pulumi/pulumi";
+
+const ConfigSchema = z.object({
+  location: z.string(),
+  repositoryId: z.string(),
+  description: z.string().optional(),
+  immutableTags: z.boolean().optional(),
+});
 
 const registry = new ArtifactRegistry({
   acceptedArtifactTypes: [DeploymentArtifactType.oci_spec_image],
-  configSchema: z.object({
-    location: z.string(),
-    repositoryId: z.string(),
-    description: z.string().optional(),
-    immutableTags: z.boolean().optional(),
-  }),
+  configSchema: ConfigSchema,
   stateSchema: z.object({
     location: z.string(),
     repositoryId: z.string(),
   }),
 });
 
-registry.implement("gcloud", {
-  provision: async ({ config, state, $, gcp }) => {
-    if (!gcp) throw new Error("gcp-artifact-registry requires gcloud provider");
-
-    const gcpOpts = gcp ? { provider: gcp } : {};
+registry.implement(gcloudDeclaration, {
+  provision: async (ctx) => {
+    const { state, $, provider: world } = ctx;
+    const config = ctx.config as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
+    const gcpOpts = { provider: gcpProvider };
     new gcp.artifactregistry.Repository($`repo`, {
       location: config.location,
       repositoryId: config.repositoryId,
@@ -31,15 +39,12 @@ registry.implement("gcloud", {
         : {}),
     }, gcpOpts);
 
-    state.location = config.location;
-    state.repositoryId = config.repositoryId;
+    state.location = pulumi.output(config.location);
+    state.repositoryId = pulumi.output(config.repositoryId);
   },
-  publish: async ({ componentName, artifacts, version, state, getCredentials }) => {
+  publish: async ({ componentName, artifacts, version, state, provider }) => {
     const { location, repositoryId } = state;
-    const creds = getCredentials() as {
-      GCP_PROJECT_ID: string;
-      GCP_SERVICE_ACCOUNT_KEY: string;
-    };
+    const creds = provider;
 
     const dockerHost = `${location}-docker.pkg.dev`;
 
@@ -71,6 +76,6 @@ registry.implement("gcloud", {
 
     return { artifacts: pushed };
   },
-});
+}, ["registry-publish"] as const);
 
 export default registry;

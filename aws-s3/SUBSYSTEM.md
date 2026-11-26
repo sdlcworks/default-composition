@@ -12,7 +12,7 @@ inputs:
       posture for the object store.
   - name: aws-control-authority
     description: >
-      Environment-provided authority to create and govern AWS infrastructure in
+      Declared world-relationship authority to create and govern AWS infrastructure in
       the selected account and region.
   - name: object-store-access-request
     description: >

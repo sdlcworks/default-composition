@@ -11,7 +11,12 @@ import * as cloudflare from "@pulumi/cloudflare";
 import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
 
-import { cloudflareProviderFromCredentials } from "../_internal/cloudflare-provider";
+import { cloudflareProviderFromWorld } from "../_internal/cloudflare-provider";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+import { awsProviderFromWorld } from "../_internal/aws-provider";
+import gcloudDeclaration from "../providers/gcloud";
+import cloudflareDeclaration from "../providers/cloudflare";
+import awsDeclaration from "../providers/aws";
 
 import { ServiceAccountCI, R2BucketCI, S3BucketCI } from "../_internal/interfaces";
 
@@ -67,23 +72,7 @@ const RetentionPolicySchema = z.object({
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: true,
-    proxiable: false,
-  },
-  connectionTypes: {
-    read: {
-      description: "allows read-only access to bucket objects",
-      interface: ServiceAccountCI,
-    },
-    write: {
-      description: "allows read and write access to bucket objects",
-      interface: ServiceAccountCI,
-    },
-  } as const,
-  connectionInterfaces: [R2BucketCI, S3BucketCI],
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // Core (GCloud)
     location: z
       .string()
@@ -128,7 +117,25 @@ const component = new InfraComponent({
     jurisdiction: R2Jurisdiction.optional(),
     r2Location: R2Location.optional(),
     r2StorageClass: R2StorageClass.optional(),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: true,
+    proxiable: false,
+  },
+  connectionTypes: {
+    read: {
+      description: "allows read-only access to bucket objects",
+      interface: ServiceAccountCI,
+    },
+    write: {
+      description: "allows read and write access to bucket objects",
+      interface: ServiceAccountCI,
+    },
+  } as const,
+  connectionInterfaces: [R2BucketCI, S3BucketCI],
+  configSchema: ConfigSchema,
   appComponentTypes: {
     "default": z.object({}),
     "bucket": z.object({
@@ -146,9 +153,10 @@ const component = new InfraComponent({
   }),
 });
 
+
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
+component.implement(gcloudDeclaration, {
   stateSchema: z.object({
     bucketName: z.string(),
     allocations: z.record(z.string(), z.object({
@@ -157,24 +165,14 @@ component.implement("gcloud", {
   }),
   initialState: { allocations: {} },
 
-  pulumi: async ({ $, inputs, state, gcp: gcpProvider }) => {
-    const {
-      location,
-      storageClass,
-      uniformBucketLevelAccess,
-      publicAccessPrevention,
-      versioning,
-      lifecycleRules,
-      corsRules,
-      retentionPolicy,
-      encryptionKeyName,
-      labels,
-      forceDestroy,
-    } = inputs;
+  pulumi: async (ctx) => {
+    const { $, state, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const location = config.location ?? "us-central1";
+    const storageClass = config.storageClass ?? "STANDARD";
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
 
-    const gcpOpts: pulumi.CustomResourceOptions = gcpProvider
-      ? { provider: gcpProvider }
-      : {};
+    const gcpOpts: pulumi.CustomResourceOptions = { provider: gcpProvider };
 
     // Generate bucket name and store in state for connection handlers
     const bucketName = $`bucket`;
@@ -182,12 +180,12 @@ component.implement("gcloud", {
 
     const bucket = new gcp.storage.Bucket(bucketName, {
       name: bucketName,
-      location: location,
-      storageClass: storageClass,
-      uniformBucketLevelAccess: uniformBucketLevelAccess,
-      publicAccessPrevention: publicAccessPrevention,
-      versioning: versioning ? { enabled: true } : undefined,
-      lifecycleRules: lifecycleRules.map((rule) => ({
+      location,
+      storageClass,
+      uniformBucketLevelAccess: config.uniformBucketLevelAccess ?? true,
+      publicAccessPrevention: config.publicAccessPrevention ?? "enforced",
+      versioning: config.versioning ? { enabled: true } : undefined,
+      lifecycleRules: config.lifecycleRules.map((rule: z.infer<typeof LifecycleRuleSchema>) => ({
         action: {
           type: rule.action.type,
           storageClass: rule.action.storageClass,
@@ -203,35 +201,33 @@ component.implement("gcloud", {
           daysSinceCustomTime: rule.condition.daysSinceCustomTime,
         },
       })),
-      cors:
-        corsRules.length > 0
-          ? corsRules.map((rule) => ({
+      cors: config.corsRules.length > 0
+          ? config.corsRules.map((rule: z.infer<typeof CorsRuleSchema>) => ({
               origins: rule.origins,
               methods: rule.methods,
               responseHeaders: rule.responseHeaders,
               maxAgeSeconds: rule.maxAgeSeconds,
             }))
           : undefined,
-      retentionPolicy: retentionPolicy
-        ? {
-            retentionPeriod: retentionPolicy.retentionPeriod,
-            isLocked: retentionPolicy.isLocked,
-          }
+      retentionPolicy: config.retentionPolicy
+        ? { retentionPeriod: String(config.retentionPolicy.retentionPeriod), isLocked: config.retentionPolicy.isLocked }
         : undefined,
-      encryption: encryptionKeyName
-        ? { defaultKmsKeyName: encryptionKeyName }
+      encryption: config.encryptionKeyName
+        ? { defaultKmsKeyName: config.encryptionKeyName }
         : undefined,
-      labels: labels,
-      forceDestroy: forceDestroy,
+      labels: config.labels,
+      forceDestroy: config.forceDestroy,
     }, gcpOpts);
 
     return {
-      id: bucket.id,
-      name: bucket.name,
-      selfLink: bucket.selfLink,
-      url: bucket.url,
-      location: bucket.location,
-      storageClass: bucket.storageClass,
+      id: pulumi.output(bucket.id),
+      name: pulumi.output(bucket.name),
+      selfLink: pulumi.output<string | undefined>(bucket.selfLink),
+      url: pulumi.output(bucket.url),
+      location: pulumi.output(bucket.location),
+      storageClass: pulumi.output(bucket.storageClass).apply(
+        (reportedStorageClass) => reportedStorageClass ?? storageClass,
+      ),
     };
   },
 
@@ -265,11 +261,11 @@ component.implement("gcloud", {
       },
     }),
   ],
-});
+}, ["infrastructure"] as const);
 
 // ---- Cloudflare Provider Implementation ----
 
-component.implement("cloudflare", {
+component.implement(cloudflareDeclaration, {
   stateSchema: z.object({
     // Instance-level — set in pulumi(), shared by all bucket targets.
     r2AccessKeyId: z.string().optional(),
@@ -291,15 +287,12 @@ component.implement("cloudflare", {
   pulumi: async ({
     $,
     state,
-    getCredentials,
+    provider: world,
   }) => {
-    const creds = (getCredentials() as Record<string, string>) || {};
-    const accountId = creds.CLOUDFLARE_ACCOUNT_ID;
-    const apiToken = creds.CLOUDFLARE_API_TOKEN;
-    if (!accountId || !apiToken) {
-      throw new Error(
-        "bucket(cloudflare): CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN must be present in cloud_credentials.cloudflare",
-      );
+    const accountId = world.CLOUDFLARE_ACCOUNT_ID;
+    const apiToken = world.CLOUDFLARE_API_TOKEN;
+    if (!accountId) {
+      throw new Error("bucket(cloudflare): CLOUDFLARE_ACCOUNT_ID is required for R2 object storage");
     }
 
     // Resolve R2 perm group IDs by name at provision time. The Pulumi
@@ -390,16 +383,18 @@ component.implement("cloudflare", {
     deploymentConfig,
     state,
     $,
-    getCredentials,
+    provider: world,
   }) => {
-    const creds = (getCredentials() as Record<string, string>) || {};
-    const accountId = creds.CLOUDFLARE_ACCOUNT_ID;
+    const accountId = world.CLOUDFLARE_ACCOUNT_ID;
+    if (!accountId) {
+      throw new Error("bucket(cloudflare): CLOUDFLARE_ACCOUNT_ID is required for R2 object storage");
+    }
 
     const bucketName: string = deploymentConfig.name;
     const publicAccess: boolean = deploymentConfig.publicAccess === true;
 
     const cfOpts: pulumi.CustomResourceOptions = {
-      provider: cloudflareProviderFromCredentials($`cf-provider-${name}`, getCredentials),
+      provider: await cloudflareProviderFromWorld($`cf-provider-${name}`, world),
     };
 
     const bucket = new cloudflare.R2Bucket(
@@ -460,7 +455,7 @@ component.implement("cloudflare", {
       },
     }),
   ]),
-});
+}, ["object-store"] as const);
 
 // ---- AWS Provider Implementation ----
 
@@ -590,7 +585,7 @@ function awsLifecycleRulesRequireVersioningCapability(
   );
 }
 
-component.implement("aws", {
+component.implement(awsDeclaration, {
   stateSchema: z.object({
     config: z.object({
       versioning: z.boolean().default(false),
@@ -634,8 +629,9 @@ component.implement("aws", {
     deploymentConfig,
     state,
     $,
-    aws: provider,
+    provider: world,
   }) => {
+    const provider = await awsProviderFromWorld($`aws-provider-${name}`, world);
     const config = (state as any).config as
       | {
           versioning: boolean;
@@ -662,9 +658,7 @@ component.implement("aws", {
         : $`s3-${name}`;
     const publicAccess = deploymentConfig?.publicAccess === true;
 
-    const awsOpts: pulumi.CustomResourceOptions = provider
-      ? { provider }
-      : {};
+    const awsOpts: pulumi.CustomResourceOptions = { provider };
 
     const bucket = new aws.s3.Bucket(
       $`s3-${name}`,
@@ -838,6 +832,6 @@ component.implement("aws", {
       },
     }),
   ]),
-});
+}, ["infrastructure"] as const);
 
 export default component;

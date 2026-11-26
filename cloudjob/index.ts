@@ -1,3 +1,6 @@
+import gcloudDeclaration from "../providers/gcloud";
+import { gcloudProviderFromWorld } from "../_internal/gcloud-provider";
+
 import { z } from "zod";
 
 import {
@@ -45,20 +48,7 @@ const VpcAccessSchema = z.object({
 
 // ---- Component Definition ----
 
-const component = new InfraComponent({
-  metadata: {
-    stateful: false,
-    proxiable: false,
-  },
-  connectionTypes: {
-    trigger: {
-      description: "allows execution of the Cloud Run Job",
-      interface: CloudRunJobHTTPCI,
-    },
-  } as const,
-  connectionInterfaces: [ServiceAccountCI, CloudRunJobHTTPCI],
-  acceptedArtifactTypes: [DeploymentArtifactType.oci_spec_image],
-  configSchema: z.object({
+const ConfigSchema = z.object({
     // Core
     region: z.string().default("us-central1"),
 
@@ -80,7 +70,22 @@ const component = new InfraComponent({
       cpu: "1000m",
       memory: "512Mi",
     }),
-  }),
+  });
+
+const component = new InfraComponent({
+  metadata: {
+    stateful: false,
+    proxiable: false,
+  },
+  connectionTypes: {
+    trigger: {
+      description: "allows execution of the Cloud Run Job",
+      interface: CloudRunJobHTTPCI,
+    },
+  } as const,
+  connectionInterfaces: [ServiceAccountCI, CloudRunJobHTTPCI],
+  acceptedArtifactTypes: [DeploymentArtifactType.oci_spec_image],
+  configSchema: ConfigSchema,
   appComponentTypes: {
     "default": z.object({}),
   },
@@ -94,7 +99,7 @@ const component = new InfraComponent({
 
 // ---- GCloud Provider Implementation ----
 
-component.implement("gcloud", {
+component.implement(gcloudDeclaration, {
   stateSchema: z.object({
     jobName: z.string(),
     location: z.string(),
@@ -113,7 +118,10 @@ component.implement("gcloud", {
   }),
   initialState: { allocations: {} },
 
-  pulumi: async ({ $, inputs, state, buildArtifacts, getCredentials, gcp: gcpProvider }) => {
+  pulumi: async (ctx) => {
+    const { $, state, buildArtifacts, provider: world } = ctx;
+    const config = ctx.inputs as unknown as z.infer<typeof ConfigSchema>;
+    const gcpProvider = await gcloudProviderFromWorld($`gcloud-provider`, world);
     const {
       region,
       taskCount,
@@ -124,7 +132,7 @@ component.implement("gcloud", {
       environmentVariables,
       secretEnvironmentVariables,
       resources,
-    } = inputs;
+    } = config;
 
     const gcpOpts: pulumi.CustomResourceOptions = gcpProvider
       ? { provider: gcpProvider }
@@ -148,11 +156,11 @@ component.implement("gcloud", {
 
     // Build environment variables
     const envVars = [
-      ...environmentVariables.map((env) => ({
+      ...environmentVariables.map((env: z.infer<typeof EnvVarSchema>) => ({
         name: env.name,
         value: env.value,
       })),
-      ...secretEnvironmentVariables.map((env) => ({
+      ...secretEnvironmentVariables.map((env: z.infer<typeof SecretEnvVarSchema>) => ({
         name: env.name,
         valueSource: {
           secretKeyRef: {
@@ -197,11 +205,10 @@ component.implement("gcloud", {
           ],
         },
       },
-      description: "Cloud Run Job managed by sdlc.works",
     }, gcpOpts);
 
     // Get GCP project from credentials
-    const project = (getCredentials() as Record<string, string>).GCP_PROJECT_ID;
+    const project = world.GCP_PROJECT_ID;
 
     // Create dedicated service account for HTTP triggering
     const httpTriggerSa = new gcp.serviceaccount.Account($`http-trigger-sa`, {
@@ -297,21 +304,15 @@ component.implement("gcloud", {
     }),
   ],
 
-  upsertArtifacts: async ({ buildArtifacts, state, getCredentials, envStore }) => {
+  upsertArtifacts: async ({ buildArtifacts, state, provider, envStore }) => {
     const componentEntries = Object.entries(buildArtifacts);
     if (componentEntries.length === 0) {
       console.error("No artifacts to deploy");
       return;
     }
 
-    const creds = (getCredentials() as Record<string, string>) || {};
-    const projectId = creds.GCP_PROJECT_ID;
-    const saKey = creds.GCP_SERVICE_ACCOUNT_KEY;
-    if (!projectId || !saKey) {
-      throw new Error(
-        "cloudjob(gcloud): GCP_PROJECT_ID and GCP_SERVICE_ACCOUNT_KEY must be present in cloud_credentials.gcloud",
-      );
-    }
+    const projectId = provider.GCP_PROJECT_ID;
+    const saKey = provider.GCP_SERVICE_ACCOUNT_KEY;
 
     const accessToken = await mintGcpAccessToken(saKey);
 
@@ -407,6 +408,6 @@ component.implement("gcloud", {
 
     console.error(`Successfully deployed ${containerImage} to ${jobName}`);
   },
-});
+}, ["infrastructure"] as const);
 
 export default component;
