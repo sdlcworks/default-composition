@@ -63,8 +63,8 @@ describe("github organization integration", () => {
     const outputs = await pulumi.runtime.runInPulumiStack(async () => realization.provision({
       organizationId: "platform-org",
       integrationName: "source-control",
-      $: (parts: TemplateStringsArray, ...values: unknown[]) =>
-        String.raw({ raw: parts }, ...values),
+      $: ((first: TemplateStringsArray | string, ...values: unknown[]) =>
+        typeof first === "string" ? first : String.raw({ raw: first }, ...values)) as never,
       configuration: {
         organizationLogin: "systemsway",
         billingEmail: "billing@example.com",
@@ -81,15 +81,15 @@ describe("github organization integration", () => {
       billingEmail: "billing@example.com",
       name: "Systemsway",
     });
-    await expect(pulumi.all(outputs).promise()).resolves.toEqual({
+    await expect(pulumi.all(outputs as unknown as Record<string, pulumi.Output<unknown>>).promise()).resolves.toEqual({
       externalOrganizationLogin: "systemsway",
       externalOrganizationId: expect.any(String),
       externalPrincipalLogin: null,
       externalMembershipId: null,
     });
     expect(state).toEqual({
-      organizationLogin: expect.any(pulumi.Output),
-      organizationSettingsId: expect.any(pulumi.Output),
+      organizationLogin: expect.any(pulumi.Output as unknown as new (...args: unknown[]) => unknown),
+      organizationSettingsId: expect.any(pulumi.Output as unknown as new (...args: unknown[]) => unknown),
     });
   });
 
@@ -101,8 +101,8 @@ describe("github organization integration", () => {
       organizationId: "platform-org",
       integrationName: "source-control",
       memberId: "principal-123",
-      $: (parts: TemplateStringsArray, ...values: unknown[]) =>
-        String.raw({ raw: parts }, ...values),
+      $: ((first: TemplateStringsArray | string, ...values: unknown[]) =>
+        typeof first === "string" ? first : String.raw({ raw: first }, ...values)) as never,
       allocation: { username: "octocat", role: "admin" },
       state: {
         organizationLogin: "systemsway",
@@ -115,7 +115,7 @@ describe("github organization integration", () => {
       "github:index/membership:Membership",
     ]);
     expect(resources[1]?.inputs).toMatchObject({ username: "octocat", role: "admin" });
-    await expect(pulumi.all(outputs).promise()).resolves.toEqual({
+    await expect(pulumi.all(outputs as unknown as Record<string, pulumi.Output<unknown>>).promise()).resolves.toEqual({
       externalOrganizationLogin: "systemsway",
       externalOrganizationId: "settings-123",
       externalPrincipalLogin: "octocat",
