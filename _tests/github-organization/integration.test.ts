@@ -81,7 +81,7 @@ describe("github organization integration", () => {
       billingEmail: "billing@example.com",
       name: "Systemsway",
     });
-    await expect(pulumi.all(outputs as unknown as Record<string, pulumi.Output<unknown>>).promise()).resolves.toEqual({
+    await expect((pulumi.all(outputs as unknown as Record<string, pulumi.Output<unknown>>) as unknown as { promise(): Promise<unknown> }).promise()).resolves.toEqual({
       externalOrganizationLogin: "systemsway",
       externalOrganizationId: expect.any(String),
       externalPrincipalLogin: null,
@@ -115,7 +115,7 @@ describe("github organization integration", () => {
       "github:index/membership:Membership",
     ]);
     expect(resources[1]?.inputs).toMatchObject({ username: "octocat", role: "admin" });
-    await expect(pulumi.all(outputs as unknown as Record<string, pulumi.Output<unknown>>).promise()).resolves.toEqual({
+    await expect((pulumi.all(outputs as unknown as Record<string, pulumi.Output<unknown>>) as unknown as { promise(): Promise<unknown> }).promise()).resolves.toEqual({
       externalOrganizationLogin: "systemsway",
       externalOrganizationId: "settings-123",
       externalPrincipalLogin: "octocat",
