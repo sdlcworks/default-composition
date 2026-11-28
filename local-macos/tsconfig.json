@@ -9,6 +9,7 @@
     "./index.ts",
     "../_internal/interfaces.ts",
     "../_internal/local-substrate.ts",
+    "../_internal/machine-local-workload-host.ts",
     "../url-registers/local-ingress/index.ts",
     "../artifact-registries/local-registry/index.ts",
     "../_tests/local-macos/*.ts"

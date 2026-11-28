@@ -1,31 +1,40 @@
+import localLinuxDeclaration from "../../providers/local-linux";
 import localMacosDeclaration from "../../providers/local-macos";
 
 import { execFileSync } from "node:child_process";
-import { ArtifactRegistry, DeploymentArtifactType } from "@sdlcworks/components";
-import { z } from "zod";
 import {
-  ensureSubstrate,
-  LOCAL_WORLD_LABEL,
-} from "../../_internal/local-substrate";
+  ArtifactRegistry,
+  DeploymentArtifactType,
+  type ArtifactRegistryFnsDef,
+  type ProviderWorld,
+} from "@sdlcworks/components";
+import { z } from "zod";
+import { ensureSubstrate } from "../../_internal/local-substrate";
 
 const ConfigSchema = z.object({
   repositoryPrefix: z.string().min(1).default("sdlc"),
 });
 
+const StateSchema = z.object({
+  pushAddress: z.string(),
+  repositoryPrefix: z.string(),
+});
+
 const registry = new ArtifactRegistry({
   acceptedArtifactTypes: [DeploymentArtifactType.oci_spec_image],
   configSchema: ConfigSchema,
-  stateSchema: z.object({
-    pushAddress: z.string(),
-    repositoryPrefix: z.string(),
-  }),
+  stateSchema: StateSchema,
 });
 
 function docker(args: string[]): void {
   execFileSync("docker", args, { stdio: "inherit" });
 }
 
-registry.implement(localMacosDeclaration, {
+const machineLocalRealization: ArtifactRegistryFnsDef<
+  typeof ConfigSchema.shape,
+  ProviderWorld<typeof localMacosDeclaration>,
+  typeof StateSchema.shape
+> = {
   provision: async ({ config, state }) => {
     const effective = config as unknown as z.infer<typeof ConfigSchema>;
     const substrate = await ensureSubstrate();
@@ -38,7 +47,7 @@ registry.implement(localMacosDeclaration, {
     for (const [label, artifact] of Object.entries(artifacts)) {
       if (artifact.type !== DeploymentArtifactType.oci_spec_image) {
         throw new Error(
-          `${LOCAL_WORLD_LABEL}: artifact label "${label}" of "${componentName}" is "${artifact.type}"; this registry publishes only OCI images`,
+          `machine-local registry: artifact label "${label}" of "${componentName}" is "${artifact.type}"; this registry publishes only OCI images`,
         );
       }
       const target = `${state.pushAddress}/${state.repositoryPrefix}/${componentName}-${label}:${version}`;
@@ -49,6 +58,9 @@ registry.implement(localMacosDeclaration, {
     }
     return { artifacts: out };
   },
-}, [] as const);
+};
+
+registry.implement(localMacosDeclaration, machineLocalRealization, [] as const);
+registry.implement(localLinuxDeclaration, machineLocalRealization, [] as const);
 
 export default registry;

@@ -19,18 +19,22 @@
         "@pulumi/cloudflare": "6.19.0",
         "@pulumi/command": "^1.2.1",
         "@pulumi/gcp": "^9.6.0",
+        "@pulumi/github": "6.15.1",
         "@pulumi/hcloud": "^1.38.0",
         "@pulumi/kubernetes": "^4.28.0",
         "@pulumi/mongodbatlas": "^4.11",
         "@pulumi/pulumi": "3.213.0",
         "@pulumi/tls": "^5.3.0",
-        "@sdlcworks/components": "https://github.com/sdlcworks/public-releases/releases/download/components%2F0.0.84-sys140.2/sdlcworks-components-0.0.84-sys140.2.tgz",
+        "@sdlcworks/components": "https://github.com/sdlcworks/public-releases/releases/download/grammar-sys156/sdlcworks-components-0.0.84-sys156.tgz",
+        "@sdlcworks/providers": "https://github.com/sdlcworks/public-releases/releases/download/grammar-sys156/sdlcworks-providers-0.0.1-sys156.tgz",
         "@smithy/node-http-handler": "4.9.13",
         "js-yaml": "^4.1.1",
         "zod": "4.1.13",
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "@types/js-yaml": "^4.0.9",
+        "typescript": "5.9.3",
       },
       "peerDependencies": {
         "typescript": "^5.9.3",
@@ -195,6 +199,8 @@
 
     "@pulumi/gcp": ["@pulumi/gcp@9.32.1", "", { "dependencies": { "@npmcli/package-json": "^6.2.0", "@pulumi/pulumi": "^3.142.0", "@types/express": "^4.16.0" } }, "sha512-4VCp/+lI995enybi0X8n6qS6OkwlZIdUAQg/qnqLJ/TK2+B3hjidcHAMk0dn2zhN/wVMJsXNC4OdnsMcWfPEpQ=="],
 
+    "@pulumi/github": ["@pulumi/github@6.15.1", "", { "dependencies": { "@pulumi/pulumi": "^3.142.0" } }, "sha512-lXoLADTzeUvhOwxqnpt1Cz2loBm7B1ufsztBBvW4QiBkam6zbNOyq6WbOQVFMVEpoKpPhQxENTLTiJt1NKxLOQ=="],
+
     "@pulumi/hcloud": ["@pulumi/hcloud@1.41.0", "", { "dependencies": { "@pulumi/pulumi": "^3.142.0" } }, "sha512-I6Lrf9yIUzU7qNi/lZ4TR8d83RmwgIy3Lf0PepqQC9auJSc0HdF6ty4miOSTOGc6/xVGKW8JdWUdYZPyPenmHg=="],
 
     "@pulumi/kubernetes": ["@pulumi/kubernetes@4.33.0", "", { "dependencies": { "@pulumi/pulumi": "^3.142.0", "glob": "^12.0.0", "shell-quote": "^1.6.1" } }, "sha512-tSMUDEWNl1pqOrANVqQRao5KRKB9waghbjpC29MUqCaqiVLZe6V0biVGC0TRDMy3hKXdP2VjiLAZ7DMnqts7rw=="],
@@ -205,7 +211,9 @@
 
     "@pulumi/tls": ["@pulumi/tls@5.5.1", "", { "dependencies": { "@pulumi/pulumi": "^3.142.0" } }, "sha512-xwOtj3Ytb3GyXRaLDQ/Aldtwy3RQvmRi6yvZ0kEl++ldrwlRWWcpYnLYC0sWtlXhEonxdi3bne1Mijk80AKdBw=="],
 
-    "@sdlcworks/components": ["@sdlcworks/components@https://github.com/sdlcworks/public-releases/releases/download/components%2F0.0.84-sys140.2/sdlcworks-components-0.0.84-sys140.2.tgz", { "peerDependencies": { "@pulumi/aws": "^7.14.0", "@pulumi/cloudflare": "6.19.0", "@pulumi/gcp": "^9.6.0", "@pulumi/pulumi": "3.213.0", "typescript": "^5.0.0", "zod": "^4.0.0" }, "optionalPeers": ["@pulumi/aws", "@pulumi/cloudflare", "@pulumi/gcp"] }],
+    "@sdlcworks/components": ["@sdlcworks/components@https://github.com/sdlcworks/public-releases/releases/download/grammar-sys156/sdlcworks-components-0.0.84-sys156.tgz", { "dependencies": { "@sdlcworks/providers": "https://github.com/sdlcworks/public-releases/releases/download/grammar-sys156/sdlcworks-providers-0.0.1-sys156.tgz" }, "peerDependencies": { "@pulumi/aws": "^7.14.0", "@pulumi/cloudflare": "6.19.0", "@pulumi/gcp": "^9.6.0", "@pulumi/pulumi": "3.213.0", "typescript": "^5.0.0", "zod": "^4.0.0" }, "optionalPeers": ["@pulumi/aws", "@pulumi/cloudflare", "@pulumi/gcp"] }, "sha512-cZ+Flt+bhv05e3xi/g65Lf2E3lc8+UqRHBx8EiTp4sb2xdJgQJSc7/Xg3cW55xNSpzh7peA60odDuFfbGe18mA=="],
+
+    "@sdlcworks/providers": ["@sdlcworks/providers@https://github.com/sdlcworks/public-releases/releases/download/grammar-sys156/sdlcworks-providers-0.0.1-sys156.tgz", { "peerDependencies": { "zod": "^4.0.0" } }, "sha512-8PI/diMZYlydtZGOXBhhbYPGU09C1kJGkxMg6p7PTfGNlM+BhfWlzA1e2f3cUKBnn7IaCFGEnSsp0vHY5eJIuw=="],
 
     "@sigstore/bundle": ["@sigstore/bundle@2.3.2", "", { "dependencies": { "@sigstore/protobuf-specs": "^0.3.2" } }, "sha512-wueKWDk70QixNLB363yHc2D2ItTgYiMTdPwK8D9dKQMR3ZQ0c35IxP5xnwQ8cNLoCgCRcHf14kE+CLIvNX1zmA=="],
 
@@ -258,6 +266,8 @@
     "@types/http-cache-semantics": ["@types/http-cache-semantics@4.2.0", "", {}, "sha512-L3LgimLHXtGkWikKnsPg0/VFx9OGZaC+eN1u4r+OB1XRqH3meBIAVC2zr1WdMH+RHmnRkqliQAOHNJ/E0j/e0Q=="],
 
     "@types/http-errors": ["@types/http-errors@2.0.5", "", {}, "sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg=="],
+
+    "@types/js-yaml": ["@types/js-yaml@4.0.9", "", {}, "sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg=="],
 
     "@types/keyv": ["@types/keyv@3.1.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-BQ5aZNSCpj7D6K2ksrRCTmKRLEpnPvWDiLPfoGyhZ++8YtiK9d/3DBKPJgry359X/P1PfruyYwvnvwFjuEiEIg=="],
 

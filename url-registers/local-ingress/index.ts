@@ -1,13 +1,17 @@
+import localLinuxDeclaration from "../../providers/local-linux";
 import localMacosDeclaration from "../../providers/local-macos";
 
 import * as k8s from "@pulumi/kubernetes";
 import * as pulumi from "@pulumi/pulumi";
-import { URLRegister } from "@sdlcworks/components";
+import {
+  URLRegister,
+  type ProviderWorld,
+  type URLRegisterFnsDef,
+} from "@sdlcworks/components";
 import { z } from "zod";
 import { LocalPublicHttpCI } from "../../_internal/interfaces";
 import {
   ensureSubstrate,
-  LOCAL_WORLD_LABEL,
   SUBSTRATE_HTTP_PORT,
   toNamespaceName,
 } from "../../_internal/local-substrate";
@@ -22,15 +26,22 @@ const ConfigSchema = z.object({
   routes: z.array(RouteSchema),
 });
 
+const StateSchema = z.object({
+  namespace: z.string(),
+});
+
 const register = new URLRegister({
   interface: LocalPublicHttpCI,
   configSchema: ConfigSchema,
-  stateSchema: z.object({
-    namespace: z.string(),
-  }),
+  stateSchema: StateSchema,
 });
 
-register.implement(localMacosDeclaration, {
+const machineLocalRealization: URLRegisterFnsDef<
+  typeof LocalPublicHttpCI,
+  typeof ConfigSchema.shape,
+  ProviderWorld<typeof localMacosDeclaration>,
+  typeof StateSchema.shape
+> = {
   provision: async ({ config, state, components, $ }) => {
     const effective = config as unknown as z.infer<typeof ConfigSchema>;
     const substrate = await ensureSubstrate();
@@ -51,7 +62,7 @@ register.implement(localMacosDeclaration, {
       const entry = components[route.targetComponent];
       if (!entry) {
         throw new Error(
-          `${LOCAL_WORLD_LABEL}: route host "${route.host}" names component "${route.targetComponent}", which exposes no local public HTTP interface`,
+          `machine-local ingress: route host "${route.host}" names component "${route.targetComponent}", which exposes no local public HTTP interface`,
         );
       }
       const fqHost = `${route.host}.localhost`;
@@ -94,6 +105,9 @@ register.implement(localMacosDeclaration, {
     }
     return results;
   },
-}, [] as const);
+};
+
+register.implement(localMacosDeclaration, machineLocalRealization, [] as const);
+register.implement(localLinuxDeclaration, machineLocalRealization, [] as const);
 
 export default register;

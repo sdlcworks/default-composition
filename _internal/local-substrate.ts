@@ -53,10 +53,12 @@ function tryRun(cmd: string, args: string[]): string | undefined {
 
 function ensureDockerDaemon(): void {
   if (tryRun("docker", ["info"]) !== undefined) return;
-  run("colima", ["start"]);
+  if (process.platform === "darwin") {
+    run("colima", ["start"]);
+  }
   if (tryRun("docker", ["info"]) === undefined) {
     throw new Error(
-      `${LOCAL_WORLD_LABEL}: no container daemon reachable after converging the machine's Linux layer`,
+      "machine-local substrate: no container daemon answers on this machine and no non-destructive act of this realization can summon one; making the daemon stand is a deliberate act outside any branch's lifecycle",
     );
   }
 }
