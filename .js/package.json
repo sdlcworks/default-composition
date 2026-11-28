@@ -34,8 +34,7 @@
     "@sdlcworks/components": "https://github.com/sdlcworks/public-releases/releases/download/grammar-sys156/sdlcworks-components-0.0.84-sys156.tgz",
     "@smithy/node-http-handler": "4.9.13",
     "js-yaml": "^4.1.1",
-    "zod": "4.1.13",
-    "@sdlcworks/providers": "https://github.com/sdlcworks/public-releases/releases/download/grammar-sys156/sdlcworks-providers-0.0.1-sys156.tgz"
+    "zod": "4.1.13"
   },
   "overrides": {
     "@pulumi/pulumi": "3.213.0"

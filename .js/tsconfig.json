@@ -5,6 +5,8 @@
     "baseUrl": ".",
     "typeRoots": ["./node_modules/@types"],
     "paths": {
+      "@sdlcworks/providers": ["./node_modules/.bun/node_modules/@sdlcworks/providers"],
+      "js-yaml": ["./node_modules/@types/js-yaml"],
       "*": ["./node_modules/*"]
     },
     "moduleResolution": "bundler",
